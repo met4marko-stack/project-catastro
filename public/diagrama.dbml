@@ -1,0 +1,217 @@
+Table users {
+    id int [pk, increment]
+    name varchar(255) [not null]
+    email varchar(255) [not null, unique]
+    email_verified_at timestamptz
+    password varchar(255) [not null]
+    remember_token varchar(100)
+    created_at timestamptz
+    updated_at timestamptz
+    municipio_id int [not null, ref: > municipios.id]
+}
+
+Table municipios {
+    id int [pk, increment]
+    nombre varchar(255) [not null]
+    departamento varchar(255) [not null]
+    logo text [not null]
+}
+
+Table roles {
+    id int [pk, increment]
+    name varchar(255) [not null]
+    guard_name varchar(255) [not null]
+    created_at timestamptz
+    updated_at timestamptz
+}
+
+Table model_has_roles {
+    id int [pk, increment]
+    role_id int [not null, ref: > roles.id]
+    model_type varchar(255) [not null]
+    model_id int [not null]
+}
+
+Table permissions {
+    id int [pk, increment]
+    name varchar(255) [not null]
+    guard_name varchar(255) [not null]
+    created_at timestamptz
+    updated_at timestamptz
+}
+
+Table model_has_permissions {
+    id int [pk, increment]
+    permission_id int [not null, ref: > permissions.id]
+    model_type varchar(255) [not null]
+    model_id int [not null]
+}       
+
+Table role_has_permissions {
+    id int [pk, increment]
+    role_id int [not null, ref: > roles.id]
+    permission_id int [not null]
+}
+
+Table plamimetrias {
+    id int [pk, increment]
+    codigo int [not null]
+    fecha_aprobacion date
+    documento_aprobacion varchar(255)
+    municipio_id int [not null, ref: > municipios.id]
+    limite_geografico "geometry(Polygon, 4326)" [not null]
+    created_at timestamptz
+    updated_at timestamptz
+}
+
+Table propietarios {
+    id int [pk, increment]
+    nombre varchar(255) [not null]
+    primer_apellido varchar(255) [not null]
+    segundo_apellido varchar(255)
+    carnet varchar(255) [not null]
+    expedido varchar(5)
+    fecha_nacimiento date [not null]
+    telefono varchar(20)
+    estado varchar(255) [not null]
+    municipio_id int [not null, ref: > municipios.id]
+    created_at timestamptz
+    updated_at timestamptz
+}
+
+Table predio {
+    id int [pk, increment]
+    inmueble_padre_id int [null]
+    propiedad_horizontal bool
+    numero_unidad varchar(20) 
+    codigo_catastral varchar(255)
+    manzano varchar(20)
+    lote varchar(20)
+    zona varchar(255)
+    superficie double
+    superficie_afectada double
+    superficie_excedente double
+    superficie_levantamiento double
+    superficie_util double
+    ubicacion "geometry(Point, 4326)" [not null]
+    frente_principal double
+    terreno_forma varchar(255)
+    servicio_electrico bool
+    servicio_agua bool
+    servicio_alcantarillado bool
+    servicio_telefono bool
+    servicio_alumbrado bool
+    servicio_gas bool   
+    tipo_via varchar(255)
+    fotografia_uno text
+    fotografia_dos text
+    fotografia_tres text
+    fotografia_cuatro text
+    fotografia_cinco text
+    colindante_norte varchar(255)
+    colindante_sur varchar(255)
+    colindante_este varchar(255)
+    colindante_oeste varchar(255)
+    planimetria_id int [not null, ref: > plamimetrias.id]
+    municipio_id int [not null, ref: > municipios.id]
+    created_at timestamptz
+    updated_at timestamptz
+}
+
+Table propietarios_predios {
+    id int [pk, increment]
+    propietario_id int [not null, ref: > propietarios.id]
+    predio_id int [not null, ref: > predio.id]
+    estado varchar(255)
+    fecha_inicio date
+    fecha_fin date
+    created_at timestamptz
+    updated_at timestamptz
+}
+
+Table tramites {
+    id int [pk, increment]
+    propietario_id int [not null, ref: > propietarios.id]
+    predio_id int [not null, ref: > predio.id]
+    municipio_id int [not null, ref: > municipios.id]
+    usuario_id int [not null, ref: > users.id]
+    fecha_ingreso date
+    fecha_inspeccion date
+    fecha_conclusion date
+    hoja_ruta varchar(255)
+    estado varchar(255)
+    observaciones text
+    created_at timestamptz
+    updated_at timestamptz
+}
+
+Table certificacion_catastral {
+    id int [pk, increment]
+    tramite_id int [not null, ref: > tramites.id]
+    estado varchar(255)
+    observaciones text
+    usuario_id int [not null, ref: > users.id]
+    propietario_id int [not null, ref: > propietarios.id]
+    predio_id int [not null, ref: > predio.id]
+    created_at timestamptz
+    updated_at timestamptz
+}
+
+Table requisitos {
+    id int [pk, increment]
+    formulario_catastral_b bool
+    testimonio_b bool
+    folio_real_b bool
+    cedula_b bool
+    impuesto_uno_b bool
+    impuesto_dos_b bool
+    impuesto_tres_b bool
+    impuesto_cuatro_b bool
+    impuesto_cinco_b bool
+    testimonio_anterior_b bool
+    folio_anterior bool
+    certificado_tradicion_b bool
+    lev_georreferenciado_b bool
+    fotografia_uno_b bool
+    fotografia_dos_b bool
+    fotografia_tres_b bool
+    fotografia_cuatro_b bool
+    fotografia_cinco_b bool
+    plano_lote_b bool
+    formulario_unico_b bool
+    certificado_catastral_vigente_b bool
+    plano_particion_b bool
+    planos_individuales_b bool
+    plano_arquitecto_b bool
+    plano_fraccionamiento_b bool
+
+    formulario_catastral text
+    testimonio text
+    folio_real text
+    cedula text
+    impuesto_uno text
+    impuesto_dos text
+    impuesto_tres text
+    impuesto_cuatro text
+    impuesto_cinco text
+    testimonio_anterior text
+    folio_anterior text
+    certificado_tradicion text
+    lev_georreferenciado text
+    fotografia_uno text
+    fotografia_dos text
+    fotografia_tres text
+    fotografia_cuatro text
+    fotografia_cinco text
+    plano_lote text
+    formulario_unico text
+    certificado_catastral_vigente text
+    plano_particion text
+    planos_individuales text
+    plano_arquitecto text
+    plano_fraccionamiento text
+    tramite_id int [not null, ref: > tramites.id]
+    created_at timestamptz
+    updated_at timestamptz
+}
+
