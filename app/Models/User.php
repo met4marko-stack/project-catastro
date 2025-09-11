@@ -4,8 +4,10 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
@@ -19,9 +21,10 @@ class User extends Authenticatable
      * @var list<string>
      */
     protected $fillable = [
-        'name',
         'email',
         'password',
+        'municipio_id',
+        'persona_id',
     ];
 
     /**
@@ -45,5 +48,21 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * Obtiene los datos personales asociados a este usuario.
+     */
+    public function persona(): BelongsTo
+    {
+        return $this->belongsTo(Persona::class);
+    }
+
+    /**
+     * Obtiene el municipio al que pertenece el usuario.
+     */
+    public function municipio(): BelongsTo
+    {
+        return $this->belongsTo(Municipio::class);
     }
 }

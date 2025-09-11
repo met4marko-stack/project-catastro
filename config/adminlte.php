@@ -301,15 +301,17 @@ return [
     'menu' => [
         [
             'text' => 'Municipios',
-            'url'  => 'admin/municipio',
+            'route'  => 'admin.municipios.index', 
+            //'url'  => 'admin/municipio',
             'icon' => 'fas fa-fw fa-city',
             'can'  => 'admin.ver-menu',
         ],
         [
             'text' => 'Usuarios',
-            'url'  => 'admin/usuario',
+            'route'  => 'admin.usuarios.index',
+            //'url'  => 'admin/usuario',
             'icon' => 'fas fa-fw fa-user',
-            'can'  => 'admin.ver-menu',
+            //'can'  => 'admin.ver-menu',
         ],
     ],
 
@@ -394,7 +396,7 @@ return [
             ],
         ],
         'Sweetalert2' => [
-            'active' => false,
+            'active' => true,
             'files' => [
                 [
                     'type' => 'js',
