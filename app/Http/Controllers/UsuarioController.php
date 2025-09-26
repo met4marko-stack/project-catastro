@@ -5,28 +5,28 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Models\Municipio;
 use App\Models\Persona;
+use App\Models\Asignacion;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\Rule; // <-- Importante: Añadir para la validación avanzada
+use Illuminate\Validation\Rule;
 use Spatie\Permission\Models\Role;
+use Carbon\Carbon;
 
 class UsuarioController extends Controller
 {
-    /**
-     * Muestra la lista de usuarios.
-     */
+    // ... index, create, store, edit, update, destroy methods remain the same ...
     public function index()
     {
         $user = Auth::user();
         $users = collect();
 
         if ($user->hasRole('Super-Admin')) {
-            $users = User::with(['persona', 'municipio', 'roles'])->get();
-        } 
-        elseif ($user->hasRole('Admin-Municipal')) {
-            $users = User::with(['persona', 'municipio', 'roles'])
+            // Se usa withTrashed() para mostrar también los usuarios inactivos
+            $users = User::withTrashed()->with(['persona', 'municipio', 'roles'])->get();
+        } elseif ($user->hasRole('Admin-Municipal')) {
+            $users = User::withTrashed()->with(['persona', 'municipio', 'roles'])
                 ->where('municipio_id', $user->municipio_id)
                 ->get();
         }
@@ -34,48 +34,27 @@ class UsuarioController extends Controller
         return view('admin.usuarios.index', compact('users'));
     }
 
-    /**
-     * Muestra el formulario para crear un nuevo usuario.
-     */
     public function create()
     {
         $municipios = Municipio::all();
-        // --- CAMBIO CLAVE ---
-        // Se excluye el rol 'Super-Admin' de la lista para que no se pueda seleccionar.
         $roles = Role::where('name', '!=', 'Super-Admin')->get();
         $expedidoOptions = ['LP', 'CB', 'SC', 'OR', 'PT', 'CH', 'TJ', 'BE', 'PD'];
-        
+
         return view('admin.usuarios.create', compact('municipios', 'roles', 'expedidoOptions'));
     }
 
-    /**
-     * Guarda el nuevo usuario en la base de datos.
-     */
     public function store(Request $request)
     {
-        // Se busca el ID del rol Super-Admin para excluirlo en la validación.
         $superAdminRole = Role::where('name', 'Super-Admin')->first();
-
         $request->validate([
-            // Reglas para la tabla 'personas'
             'nombre' => 'required|string|max:255',
-            'primer_apellido' => 'required|string|max:255',
-            'segundo_apellido' => 'nullable|string|max:255',
             'carnet' => 'required|string|max:255|unique:personas,carnet',
-            'expedido' => 'nullable|string|max:5',
-            'telefono' => 'nullable|string|max:255',
-            'fecha_nacimiento' => 'nullable|date',
-            
-            // Reglas para la tabla 'users'
+            // --- VALIDACIÓN AÑADIDA ---
+            'ci_fecha_caducidad' => 'nullable|date|required_if:ci_es_indefinido,false',
+            'ci_es_indefinido' => 'nullable|boolean',
             'email' => 'required|string|email|max:255|unique:users,email',
             'password' => 'required|string|min:8|confirmed',
-            // --- CAMBIO CLAVE ---
-            // Se añade una regla para asegurar que el rol seleccionado no sea el de Super-Admin.
-            'rol_id' => [
-                'required',
-                'exists:roles,id',
-                Rule::notIn([$superAdminRole->id]),
-            ],
+            'rol_id' => ['required', 'exists:roles,id', Rule::notIn([$superAdminRole->id]),],
             'municipio_id' => Auth::user()->hasRole('Super-Admin') ? 'required|exists:municipios,id' : 'nullable',
         ]);
 
@@ -90,11 +69,12 @@ class UsuarioController extends Controller
                 'expedido' => $request->expedido,
                 'telefono' => $request->telefono,
                 'fecha_nacimiento' => $request->fecha_nacimiento,
+                // --- DATOS AÑADIDOS ---
+                'ci_es_indefinido' => $request->has('ci_es_indefinido'),
+                'ci_fecha_caducidad' => $request->has('ci_es_indefinido') ? null : $request->ci_fecha_caducidad,
             ]);
 
-            $municipio_id = Auth::user()->hasRole('Super-Admin') 
-                ? $request->municipio_id 
-                : Auth::user()->municipio_id;
+            $municipio_id = Auth::user()->hasRole('Super-Admin') ? $request->municipio_id : Auth::user()->municipio_id;
 
             $user = User::create([
                 'email' => $request->email,
@@ -106,16 +86,113 @@ class UsuarioController extends Controller
             $rol = Role::findById($request->rol_id);
             $user->assignRole($rol);
 
+            Asignacion::create([
+                'user_id' => $user->id,
+                'municipio_id' => $municipio_id,
+                'fecha_asignacion' => Carbon::now(),
+                'estado' => 'Activo',
+            ]);
+
             DB::commit();
-
-            return redirect()->route('admin.usuarios.index')
-                ->with('success', 'Usuario creado exitosamente.');
-
+            return redirect()->route('admin.usuarios.index')->with('success', 'Usuario creado exitosamente.');
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->withInput()->withErrors(['error' => 'Ocurrió un error al crear el usuario. ' . $e->getMessage()]);
         }
     }
 
-}
+    public function edit(User $usuario)
+    {
+        $municipios = Municipio::all();
+        $roles = Role::where('name', '!=', 'Super-Admin')->get();
+        $expedidoOptions = ['LP', 'CB', 'SC', 'OR', 'PT', 'CH', 'TJ', 'BE', 'PD'];
+        return view('admin.usuarios.edit', compact('usuario', 'municipios', 'roles', 'expedidoOptions'));
+    }
 
+    public function update(Request $request, User $usuario)
+    {
+        $superAdminRole = Role::where('name', 'Super-Admin')->first();
+        $request->validate([
+            'nombre' => 'required|string|max:255',
+            'carnet' => 'required|string|max:255|unique:personas,carnet,' . $usuario->persona_id,
+            // --- VALIDACIÓN AÑADIDA ---
+            'ci_fecha_caducidad' => 'nullable|date|required_if:ci_es_indefinido,false',
+            'ci_es_indefinido' => 'nullable|boolean',
+            'email' => 'required|string|email|max:255|unique:users,email,' . $usuario->id,
+            'rol_id' => ['required', 'exists:roles,id', Rule::notIn([$superAdminRole->id])],
+            'municipio_id' => Auth::user()->hasRole('Super-Admin') ? 'required|exists:municipios,id' : 'nullable',
+            'password' => 'nullable|string|min:8|confirmed',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $usuario->persona->update([
+                'nombre' => $request->nombre,
+                'primer_apellido' => $request->primer_apellido,
+                'segundo_apellido' => $request->segundo_apellido,
+                'carnet' => $request->carnet,
+                'expedido' => $request->expedido,
+                'telefono' => $request->telefono,
+                'fecha_nacimiento' => $request->fecha_nacimiento,
+                // --- DATOS AÑADIDOS ---
+                'ci_es_indefinido' => $request->has('ci_es_indefinido'),
+                'ci_fecha_caducidad' => $request->has('ci_es_indefinido') ? null : $request->ci_fecha_caducidad,
+            ]);
+
+            $usuario->email = $request->email;
+            if ($request->filled('password')) {
+                $usuario->password = Hash::make($request->password);
+            }
+            if (Auth::user()->hasRole('Super-Admin') && $usuario->municipio_id != $request->municipio_id) {
+                Asignacion::where('user_id', $usuario->id)->where('estado', 'Activo')->update(['fecha_cese' => Carbon::now(), 'estado' => 'Inactivo']);
+                Asignacion::create(['user_id' => $usuario->id, 'municipio_id' => $request->municipio_id, 'fecha_asignacion' => Carbon::now(), 'estado' => 'Activo']);
+                $usuario->municipio_id = $request->municipio_id;
+            }
+            $usuario->save();
+            $rol = Role::findById($request->rol_id);
+            $usuario->syncRoles([$rol]);
+
+            DB::commit();
+            return redirect()->route('admin.usuarios.index')->with('success', 'Usuario actualizado exitosamente.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->withInput()->withErrors(['error' => 'Ocurrió un error al actualizar el usuario. ' . $e->getMessage()]);
+        }
+    }
+
+    public function destroy(User $usuario)
+    {
+        if ($usuario->id == Auth::id()) {
+            return redirect()->route('admin.usuarios.index')->withErrors(['error' => 'No puedes desactivar tu propia cuenta.']);
+        }
+        try {
+            DB::beginTransaction();
+            Asignacion::where('user_id', $usuario->id)->where('estado', 'Activo')->update(['fecha_cese' => Carbon::now(), 'estado' => 'Inactivo',]);
+            $usuario->delete();
+            DB::commit();
+            return redirect()->route('admin.usuarios.index')->with('success', 'Usuario desactivado exitosamente.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->route('admin.usuarios.index')->withErrors(['error' => 'Ocurrió un error al desactivar el usuario.']);
+        }
+    }
+
+    /**
+     * Restaura un usuario desactivado (soft deleted).
+     */
+    public function restore($id)
+    {
+        $usuario = User::withTrashed()->findOrFail($id);
+        try {
+            DB::beginTransaction();
+            $usuario->restore();
+            Asignacion::create(['user_id' => $usuario->id, 'municipio_id' => $usuario->municipio_id, 'fecha_asignacion' => Carbon::now(), 'estado' => 'Activo',]);
+            DB::commit();
+            return redirect()->route('admin.usuarios.index')->with('success', 'Usuario reactivado exitosamente.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->route('admin.usuarios.index')->withErrors(['error' => 'Ocurrió un error al reactivar el usuario.']);
+        }
+    }
+}

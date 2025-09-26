@@ -299,19 +299,31 @@ return [
     */
 
     'menu' => [
+        ['header' => 'ADMINISTRACIÓN'],
+
         [
             'text' => 'Municipios',
-            'route'  => 'admin.municipios.index', 
-            //'url'  => 'admin/municipio',
+            'route'  => 'admin.municipios.index',
             'icon' => 'fas fa-fw fa-city',
-            'can'  => 'admin.ver-menu',
+            'can'  => 'ver-seccion-super-admin', // Permiso para Super-Admin
         ],
         [
             'text' => 'Usuarios',
             'route'  => 'admin.usuarios.index',
-            //'url'  => 'admin/usuario',
-            'icon' => 'fas fa-fw fa-user',
-            //'can'  => 'admin.ver-menu',
+            'icon' => 'fas fa-fw fa-users',
+            'can'  => 'ver-seccion-admin-general', // Permiso para Super-Admin y Admin-Municipal
+        ],
+        [
+            'text' => 'Propietarios',
+            'route'  => 'admin.propietarios.index',
+            'icon' => 'fas fa-fw fa-id-card',
+            'can'  => 'ver-seccion-admin-municipal', // Permiso Admin-Municipal
+        ],
+        [
+            'text' => 'Historial de Asignaciones',
+            'route'  => 'admin.asignaciones.index',
+            'icon' => 'fas fa-fw fa-history',
+            'can'  => 'ver-seccion-super-admin', // Permiso para Super-Admin
         ],
     ],
 

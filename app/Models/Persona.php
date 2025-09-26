@@ -15,6 +15,8 @@ class Persona extends Model
         'segundo_apellido',
         'carnet',
         'expedido',
+        'ci_fecha_caducidad', 
+        'ci_es_indefinido',   
         'telefono',
         'fecha_nacimiento',
     ];
