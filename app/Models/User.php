@@ -7,24 +7,24 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
-use Illuminate\Database\Eloquent\SoftDeletes; // <-- 1. Importar el trait
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class User extends Authenticatable
 {
-    // <-- 2. Usar el trait
-    use HasApiTokens, HasFactory, Notifiable, HasRoles, SoftDeletes; 
+    use HasApiTokens, HasFactory, Notifiable, HasRoles, SoftDeletes;
 
-    // ... el resto de tu modelo se mantiene igual ...
     protected $fillable = [
         'email',
         'password',
         'persona_id',
         'municipio_id',
+        'google2fa_secret',
     ];
 
     protected $hidden = [
         'password',
         'remember_token',
+        'google2fa_secret',
     ];
 
     protected $casts = [
@@ -41,5 +41,15 @@ class User extends Authenticatable
     {
         return $this->belongsTo(Municipio::class);
     }
-}
 
+    public function getNameAttribute()
+    {
+        // Si la relación 'persona' existe y está cargada, devuelve su nombre completo
+        if ($this->persona) {
+            return $this->persona->nombre_completo;
+        }
+
+        // Si no hay una persona asociada, devuelve el email como alternativa
+        return $this->email;
+    }
+}

@@ -55,16 +55,6 @@
 
 @section('js')
 <script>
-    // Script para deshabilitar la fecha de caducidad si el carnet es indefinido
-    /*document.getElementById('ci_es_indefinido').addEventListener('change', function() {
-        var fechaCaducidadInput = document.getElementById('ci_fecha_caducidad');
-        if (this.checked) {
-            fechaCaducidadInput.disabled = true;
-            fechaCaducidadInput.value = ''; // Limpiar el valor
-        } else {
-            fechaCaducidadInput.disabled = false;
-        }
-    });*/
     $(document).ready(function() {
         function handleCiExpiration() {
             var isChecked = $('#ci_es_indefinido').is(':checked');

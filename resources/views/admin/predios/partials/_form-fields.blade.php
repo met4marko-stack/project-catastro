@@ -1,0 +1,217 @@
+<div class="row">
+    {{-- Columna Izquierda: Datos Principales --}}
+    <div class="col-md-8">
+        <div class="card card-primary">
+            <div class="card-header">
+                <h3 class="card-title">1. Datos de Identificación y Propietarios</h3>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 form-group">
+                        <label>Planimetría (*)</label>
+                        <select name="planimetria_id" id="planimetria_id" class="form-control select2" required>
+                            <option value="">-- Seleccione una Planimetría --</option>
+                            @foreach ($planimetrias as $planimetria)
+                                <option value="{{ $planimetria->id }}"
+                                    {{ old('planimetria_id', $predio->planimetria_id ?? '') == $planimetria->id ? 'selected' : '' }}>
+                                    {{ $planimetria->codigo }} ({{ $planimetria->municipio->nombre }})
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-md-6 form-group">
+                        <label>Propietario(s) (*)</label>
+                        <select name="propietarios[]" id="propietarios" class="form-control select2" multiple="multiple"
+                            required>
+                            @foreach ($propietarios as $propietario)
+                                <option value="{{ $propietario->id }}"
+                                    {{ in_array($propietario->id, old('propietarios', $predio->propietarios->pluck('id')->toArray() ?? [])) ? 'selected' : '' }}>
+                                    {{ $propietario->persona->nombre_completo }} ({{ $propietario->persona->carnet }})
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-4 form-group"><label>N° de Plano</label><input type="text" name="numero_plano"
+                            value="{{ old('numero_plano', $predio->numero_plano ?? '') }}" class="form-control"></div>
+                    <div class="col-md-4 form-group"><label>Código Catastral (*)</label><input type="text"
+                            name="codigo_catastral"
+                            value="{{ old('codigo_catastral', $predio->codigo_catastral ?? '') }}" class="form-control"
+                            required></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-secondary">
+            <div class="card-header">
+                <h3 class="card-title">2. Datos de Ubicación y Superficies</h3>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4 form-group"><label>Manzano</label><input type="text" name="manzano"
+                            value="{{ old('manzano', $predio->manzano ?? '') }}" class="form-control"></div>
+                    <div class="col-md-4 form-group"><label>Lote</label><input type="text" name="lote"
+                            value="{{ old('lote', $predio->lote ?? '') }}" class="form-control"></div>
+                    <div class="col-md-4 form-group"><label>Zona/Urbanización</label><input type="text"
+                            name="zona" value="{{ old('zona', $predio->zona ?? '') }}" class="form-control"></div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 form-group"><label>Provincia</label><input type="text" name="provincia"
+                            value="{{ old('provincia', $predio->provincia ?? '') }}" class="form-control"></div>
+                    <div class="col-md-6 form-group"><label>Centro Poblado</label><input type="text"
+                            name="centro_poblado" value="{{ old('centro_poblado', $predio->centro_poblado ?? '') }}"
+                            class="form-control"></div>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-md-4 form-group"><label>Superficie s/Levantamiento (m²)</label><input type="number"
+                            step="0.01" name="sup_levantamiento"
+                            value="{{ old('sup_levantamiento', $predio->sup_levantamiento ?? '') }}"
+                            class="form-control"></div>
+                    <div class="col-md-4 form-group"><label>Superficie s/Testimonio (m²)</label><input type="number"
+                            step="0.01" name="sup_testimonio"
+                            value="{{ old('sup_testimonio', $predio->sup_testimonio ?? '') }}" class="form-control">
+                    </div>
+                    <div class="col-md-4 form-group"><label>Superficie Construida (m²)</label><input type="number"
+                            step="0.01" name="sup_construida"
+                            value="{{ old('sup_construida', $predio->sup_construida ?? '') }}" class="form-control">
+                    </div>
+                    <div class="col-md-6 form-group"><label>Superficie Afectada (m²)</label><input type="number"
+                            step="0.01" name="sup_afectada"
+                            value="{{ old('sup_afectada', $predio->sup_afectada ?? '') }}" class="form-control"></div>
+                    <div class="col-md-6 form-group"><label>Superficie Útil (m²)</label><input type="number"
+                            step="0.01" name="sup_util" value="{{ old('sup_util', $predio->sup_util ?? '') }}"
+                            class="form-control"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-secondary">
+            <div class="card-header">
+                <h3 class="card-title">3. Colindantes y Características</h3>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 form-group"><label>Colindante Norte</label><input type="text"
+                            name="colindante_norte"
+                            value="{{ old('colindante_norte', $predio->colindante_norte ?? '') }}"
+                            class="form-control"></div>
+                    <div class="col-md-6 form-group"><label>Colindante Sur</label><input type="text"
+                            name="colindante_sur" value="{{ old('colindante_sur', $predio->colindante_sur ?? '') }}"
+                            class="form-control"></div>
+                    <div class="col-md-6 form-group"><label>Colindante Este</label><input type="text"
+                            name="colindante_este"
+                            value="{{ old('colindante_este', $predio->colindante_este ?? '') }}"
+                            class="form-control"></div>
+                    <div class="col-md-6 form-group"><label>Colindante Oeste</label><input type="text"
+                            name="colindante_oeste"
+                            value="{{ old('colindante_oeste', $predio->colindante_oeste ?? '') }}"
+                            class="form-control"></div>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-md-4 form-group"><label>Frente Principal (m)</label><input type="number"
+                            step="0.01" name="frente_principal"
+                            value="{{ old('frente_principal', $predio->frente_principal ?? '') }}"
+                            class="form-control"></div>
+                    <div class="col-md-4 form-group"><label>Material de Vía</label><input type="text"
+                            name="material_via" value="{{ old('material_via', $predio->material_via ?? '') }}"
+                            class="form-control"></div>
+                    <div class="col-md-4 form-group"><label>Forma del Lote</label><input type="text"
+                            name="forma_lote" value="{{ old('forma_lote', $predio->forma_lote ?? '') }}"
+                            class="form-control"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- Columna Derecha: Datos Secundarios --}}
+    <div class="col-md-4">
+        <div class="card card-secondary">
+            <div class="card-header">
+                <h3 class="card-title">4. Propiedad Horizontal</h3>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <div class="custom-control custom-switch custom-switch-off-danger custom-switch-on-success">
+                        <input type="checkbox" class="custom-control-input" id="propiedad_horizontal"
+                            name="propiedad_horizontal" value="1"
+                            {{ old('propiedad_horizontal', $predio->propiedad_horizontal ?? false) ? 'checked' : '' }}>
+                        <label class="custom-control-label" for="propiedad_horizontal">Es un Inmueble Padre
+                            (Edificio)</label>
+                    </div>
+                </div>
+                <div id="campos_unidad"
+                    style="{{ old('propiedad_horizontal', $predio->propiedad_horizontal ?? false) ? 'display:none;' : '' }}">
+                    <div class="form-group">
+                        <label>Inmueble Padre al que pertenece</label>
+                        <select name="inmueble_padre_id" class="form-control select2">
+                            <option value="">-- No es una unidad / Seleccionar --</option>
+                            @foreach ($prediosPadre as $padre)
+                                <option value="{{ $padre->id }}"
+                                    {{ old('inmueble_padre_id', $predio->inmueble_padre_id ?? '') == $padre->id ? 'selected' : '' }}>
+                                    {{ $padre->codigo_catastral }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Número de Unidad / Departamento</label>
+                        <input type="text" name="numero_unidad"
+                            value="{{ old('numero_unidad', $predio->numero_unidad ?? '') }}" class="form-control">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-secondary">
+            <div class="card-header">
+                <h3 class="card-title">5. Servicios Básicos</h3>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <div class="custom-control custom-checkbox"><input class="custom-control-input" type="checkbox"
+                            id="agua_potable" name="agua_potable" value="1"
+                            {{ old('agua_potable', $predio->agua_potable ?? false) ? 'checked' : '' }}><label
+                            for="agua_potable" class="custom-control-label">Agua Potable</label></div>
+                    <div class="custom-control custom-checkbox"><input class="custom-control-input" type="checkbox"
+                            id="energia_electrica" name="energia_electrica" value="1"
+                            {{ old('energia_electrica', $predio->energia_electrica ?? false) ? 'checked' : '' }}><label
+                            for="energia_electrica" class="custom-control-label">Energía Eléctrica</label></div>
+                    <div class="custom-control custom-checkbox"><input class="custom-control-input" type="checkbox"
+                            id="alcantarillado" name="alcantarillado" value="1"
+                            {{ old('alcantarillado', $predio->alcantarillado ?? false) ? 'checked' : '' }}><label
+                            for="alcantarillado" class="custom-control-label">Alcantarillado</label></div>
+                    <div class="custom-control custom-checkbox"><input class="custom-control-input" type="checkbox"
+                            id="alumbrado_publico" name="alumbrado_publico" value="1"
+                            {{ old('alumbrado_publico', $predio->alumbrado_publico ?? false) ? 'checked' : '' }}><label
+                            for="alumbrado_publico" class="custom-control-label">Alumbrado Público</label></div>
+                    <div class="custom-control custom-checkbox"><input class="custom-control-input" type="checkbox"
+                            id="gas_domiciliario" name="gas_domiciliario" value="1"
+                            {{ old('gas_domiciliario', $predio->gas_domiciliario ?? false) ? 'checked' : '' }}><label
+                            for="gas_domiciliario" class="custom-control-label">Gas Domiciliario</label></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-info">
+            <div class="card-header">
+                <h3 class="card-title">6. Fotografías (Opcional, máx. 5)</h3>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label for="fotografias">Cargar una o varias imágenes</label>
+                    <div class="custom-file">
+                        <input type="file" class="custom-file-input" name="fotografias[]" id="fotografias"
+                            multiple accept="image/*">
+                        <label class="custom-file-label" for="fotografias">Elegir archivos...</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{-- Campo oculto para las coordenadas --}}
+<textarea name="coordenadas_text" id="coordenadas_text" style="display: none;">{{ old('coordenadas_text', '[]') }}</textarea>

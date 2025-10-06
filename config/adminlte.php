@@ -320,10 +320,35 @@ return [
             'can'  => 'ver-seccion-admin-municipal', // Permiso Admin-Municipal
         ],
         [
+            'text' => 'Predios',
+            'route'  => 'admin.predios.index',
+            'icon' => 'fas fa-fw fa-house-user', // Ícono de casa/propiedad
+            'can'  => 'ver-seccion-admin-municipal',
+        ],
+        [
             'text' => 'Historial de Asignaciones',
             'route'  => 'admin.asignaciones.index',
             'icon' => 'fas fa-fw fa-history',
             'can'  => 'ver-seccion-super-admin', // Permiso para Super-Admin
+        ],
+        ['header' => 'GESTIÓN TERRITORIAL'],
+        [
+            'text'    => 'Planimetrías',
+            'icon'    => 'fas fa-fw fa-map-marked-alt',
+            'submenu' => [
+                [
+                    'text' => 'Visualización de Planimetrías',
+                    'route'  => '',
+                    'icon' => 'far fa-fw fa-circle',
+                ],
+                // Aquí podrías añadir más enlaces como "Crear Planimetría", etc.
+            ],
+        ],
+        ['header' => 'CONFIGURACIÓN DE CUENTA'],
+        [
+            'text' => 'Seguridad (2FA)',
+            'route'  => '2fa.enable', // Apunta a la ruta para activar 2FA
+            'icon' => 'fas fa-fw fa-shield-alt',
         ],
     ],
 
@@ -363,7 +388,7 @@ return [
 
     'plugins' => [
         'Datatables' => [
-            'active' => false,
+            'active' => true,
             'files' => [
                 [
                     'type' => 'js',
@@ -383,7 +408,7 @@ return [
             ],
         ],
         'Select2' => [
-            'active' => false,
+            'active' => true,
             'files' => [
                 [
                     'type' => 'js',
@@ -398,7 +423,7 @@ return [
             ],
         ],
         'Chartjs' => [
-            'active' => false,
+            'active' => true,
             'files' => [
                 [
                     'type' => 'js',

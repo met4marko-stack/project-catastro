@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
+use Spatie\PdfToImage\Pdf;
 
 class HomeController extends Controller
 {

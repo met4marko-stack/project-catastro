@@ -13,32 +13,89 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Spatie\Permission\Models\Role;
 use Carbon\Carbon;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password;
+use App\Http\Controllers\datatables;
 
 class UsuarioController extends Controller
 {
-    // ... index, create, store, edit, update, destroy methods remain the same ...
-    public function index()
+    public function index(Request $request)
     {
-        $user = Auth::user();
-        $users = collect();
+        // Verifica si la petición es para DataTables
+        if ($request->ajax()) {
+            $userAuth = Auth::user();
+            $status = $request->query('status', 'active'); // Por defecto muestra 'activos'
 
-        if ($user->hasRole('Super-Admin')) {
-            // Se usa withTrashed() para mostrar también los usuarios inactivos
-            $users = User::withTrashed()->with(['persona', 'municipio', 'roles'])->get();
-        } elseif ($user->hasRole('Admin-Municipal')) {
-            $users = User::withTrashed()->with(['persona', 'municipio', 'roles'])
-                ->where('municipio_id', $user->municipio_id)
-                ->get();
+            // Modifica la consulta base según el estado solicitado
+            if ($status === 'inactive') {
+                $query = User::onlyTrashed(); // Solo usuarios con soft delete
+            } else {
+                $query = User::query(); // Solo usuarios activos
+            }
+
+            // Carga las relaciones necesarias
+            $query->with(['persona', 'municipio', 'roles']);
+
+            // Un Admin-Municipal solo ve usuarios de su municipio
+            if ($userAuth->hasRole('Admin-Municipal')) {
+                $query->where('municipio_id', $userAuth->municipio_id);
+            }
+
+            // Excluye siempre al usuario autenticado de la lista
+            $query->where('id', '!=', $userAuth->id);
+
+            // Lógica de DataTables (búsqueda, ordenamiento, etc.)
+            return datatables()->eloquent($query)
+                ->addIndexColumn()
+                ->addColumn('nombre_completo', function (User $user) {
+                    return $user->persona ? $user->persona->nombre_completo : 'N/A';
+                })
+                ->editColumn('municipio', function (User $user) {
+                    return $user->municipio->nombre ?? 'N/A';
+                })
+                ->editColumn('roles', function (User $user) {
+                    return $user->roles->pluck('name')->map(function ($name) {
+                        return '<span class="badge badge-info">' . $name . '</span>';
+                    })->implode(' ');
+                })
+                ->addColumn('estado', function (User $user) {
+                    return $user->trashed()
+                        ? '<span class="badge badge-danger">Inactivo</span>'
+                        : '<span class="badge badge-success">Activo</span>';
+                })
+                ->addColumn('acciones', function (User $user) {
+                    if ($user->trashed()) {
+                        $restoreUrl = route('admin.usuarios.restore', $user->id);
+                        // Usamos @csrf y @method() directamente en la cadena
+                        return '<form action="' . $restoreUrl . '" method="POST" class="d-inline form-restore">
+                                ' . csrf_field() . '
+                                <button type="submit" class="btn btn-sm btn-info" title="Reactivar"><i class="fas fa-undo"></i></button>
+                            </form>';
+                    } else {
+                        $editUrl = route('admin.usuarios.edit', $user);
+                        $deleteUrl = route('admin.usuarios.destroy', $user);
+                        // Usamos @csrf y @method() directamente en la cadena
+                        return '<a href="' . $editUrl . '" class="btn btn-sm btn-warning" title="Editar"><i class="fas fa-edit"></i></a>
+                            <form action="' . $deleteUrl . '" method="POST" class="d-inline form-delete">
+                                ' . csrf_field() . '
+                                ' . method_field('DELETE') . '
+                                <button type="submit" class="btn btn-sm btn-danger" title="Desactivar"><i class="fas fa-trash"></i></button>
+                            </form>';
+                    }
+                })
+                ->rawColumns(['roles', 'estado', 'acciones']) // Indica a DataTables que estas columnas contienen HTML
+                ->toJson();
         }
 
-        return view('admin.usuarios.index', compact('users'));
+        // Si no es una petición AJAX, solo muestra la vista
+        return view('admin.usuarios.index');
     }
 
     public function create()
     {
         $municipios = Municipio::all();
         $roles = Role::where('name', '!=', 'Super-Admin')->get();
-        $expedidoOptions = ['LP', 'CB', 'SC', 'OR', 'PT', 'CH', 'TJ', 'BE', 'PD'];
+        $expedidoOptions = ['LP', 'CB', 'SC', 'OR', 'PT', 'CH', 'TJ', 'BE', 'PD', 'QR'];
 
         return view('admin.usuarios.create', compact('municipios', 'roles', 'expedidoOptions'));
     }
@@ -47,13 +104,18 @@ class UsuarioController extends Controller
     {
         $superAdminRole = Role::where('name', 'Super-Admin')->first();
         $request->validate([
-            'nombre' => 'required|string|max:255',
+            'nombre' => 'required|string|max:255|regex:/^[\pL\s\-]+$/u',
+            'primer_apellido' => 'required|string|max:255|regex:/^[\pL\s\-]+$/u',
+            'segundo_apellido' => 'nullable|string|max:255|regex:/^[\pL\s\-]+$/u',
             'carnet' => 'required|string|max:255|unique:personas,carnet',
-            // --- VALIDACIÓN AÑADIDA ---
+            'expedido' => 'required',
             'ci_fecha_caducidad' => 'nullable|date|required_if:ci_es_indefinido,false',
             'ci_es_indefinido' => 'nullable|boolean',
             'email' => 'required|string|email|max:255|unique:users,email',
-            'password' => 'required|string|min:8|confirmed',
+
+            'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()],
+            'telefono' => 'nullable|numeric',
+
             'rol_id' => ['required', 'exists:roles,id', Rule::notIn([$superAdminRole->id]),],
             'municipio_id' => Auth::user()->hasRole('Super-Admin') ? 'required|exists:municipios,id' : 'nullable',
         ]);
@@ -62,9 +124,9 @@ class UsuarioController extends Controller
             DB::beginTransaction();
 
             $persona = Persona::create([
-                'nombre' => $request->nombre,
-                'primer_apellido' => $request->primer_apellido,
-                'segundo_apellido' => $request->segundo_apellido,
+                'nombre' => Str::upper($request->nombre),
+                'primer_apellido' => Str::upper($request->primer_apellido),
+                'segundo_apellido' => Str::upper($request->segundo_apellido),
                 'carnet' => $request->carnet,
                 'expedido' => $request->expedido,
                 'telefono' => $request->telefono,
@@ -105,7 +167,7 @@ class UsuarioController extends Controller
     {
         $municipios = Municipio::all();
         $roles = Role::where('name', '!=', 'Super-Admin')->get();
-        $expedidoOptions = ['LP', 'CB', 'SC', 'OR', 'PT', 'CH', 'TJ', 'BE', 'PD'];
+        $expedidoOptions = ['LP', 'CB', 'SC', 'OR', 'PT', 'CH', 'TJ', 'BE', 'PD', 'QR'];
         return view('admin.usuarios.edit', compact('usuario', 'municipios', 'roles', 'expedidoOptions'));
     }
 
@@ -113,24 +175,27 @@ class UsuarioController extends Controller
     {
         $superAdminRole = Role::where('name', 'Super-Admin')->first();
         $request->validate([
-            'nombre' => 'required|string|max:255',
+            'nombre' => 'required|string|max:255|regex:/^[\pL\s\-]+$/u',
+            'primer_apellido' => 'required|string|max:255|regex:/^[\pL\s\-]+$/u',
+            'segundo_apellido' => 'nullable|string|max:255|regex:/^[\pL\s\-]+$/u',
             'carnet' => 'required|string|max:255|unique:personas,carnet,' . $usuario->persona_id,
-            // --- VALIDACIÓN AÑADIDA ---
+            'expedido' => 'required',
             'ci_fecha_caducidad' => 'nullable|date|required_if:ci_es_indefinido,false',
             'ci_es_indefinido' => 'nullable|boolean',
             'email' => 'required|string|email|max:255|unique:users,email,' . $usuario->id,
             'rol_id' => ['required', 'exists:roles,id', Rule::notIn([$superAdminRole->id])],
             'municipio_id' => Auth::user()->hasRole('Super-Admin') ? 'required|exists:municipios,id' : 'nullable',
-            'password' => 'nullable|string|min:8|confirmed',
+            'password' => ['nullable', 'confirmed', Password::min(8)->mixedCase()->numbers()],
+            'telefono' => 'nullable|numeric',
         ]);
 
         try {
             DB::beginTransaction();
 
             $usuario->persona->update([
-                'nombre' => $request->nombre,
-                'primer_apellido' => $request->primer_apellido,
-                'segundo_apellido' => $request->segundo_apellido,
+                'nombre' => Str::upper($request->nombre),
+                'primer_apellido' => Str::upper($request->primer_apellido),
+                'segundo_apellido' => Str::upper($request->segundo_apellido),
                 'carnet' => $request->carnet,
                 'expedido' => $request->expedido,
                 'telefono' => $request->telefono,

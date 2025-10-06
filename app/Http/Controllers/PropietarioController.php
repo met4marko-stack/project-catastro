@@ -16,36 +16,129 @@ use Intervention\Image\ImageManager;
 use Intervention\Image\Drivers\Imagick\Driver as ImagickDriver;
 use Illuminate\Support\Str;
 use Intervention\Image\Exceptions\NotReadableException;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\File;
 
 class PropietarioController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $user = Auth::user();
-        $propietarios = collect();
+        // Si la petición es AJAX (de DataTables), procesamos los datos
+        if ($request->ajax()) {
+            $user = Auth::user();
 
-        if ($user->hasRole('Super-Admin')) {
-            $propietarios = Propietario::with(['persona', 'municipio'])->get();
-        } else {
-            $propietarios = Propietario::with(['persona', 'municipio'])
-                ->where('municipio_id', $user->municipio_id)
+            // 1. Empezamos la consulta base
+            $query = Propietario::with(['persona', 'municipio']);
+
+            // 2. Filtramos por municipio para rol 'Admin-Municipal'
+            if ($user->hasRole('Admin-Municipal')) {
+                $query->where('municipio_id', $user->municipio_id);
+            }
+
+            // 3. Aplicamos el filtro de búsqueda global
+            if ($search = $request->input('search.value')) {
+                $query->where(function ($q) use ($search) {
+                    $q->whereHas('persona', function ($q) use ($search) {
+                        $q->where('nombre', 'like', "%{$search}%")
+                            ->orWhere('primer_apellido', 'like', "%{$search}%")
+                            ->orWhere('segundo_apellido', 'like', "%{$search}%")
+                            ->orWhere('carnet', 'like', "%{$search}%");
+                    })
+                        ->orWhereHas('municipio', function ($q) use ($search) {
+                            $q->where('nombre', 'like', "%{$search}%");
+                        });
+                });
+            }
+
+            // 4. Obtenemos el total de registros filtrados para la paginación
+            $recordsFiltered = $query->count();
+
+            // 5. Aplicamos el ordenamiento
+            $orderColumnIndex = $request->input('order.0.column');
+            $orderDir = $request->input('order.0.dir');
+            $columns = ['id', 'nombre', 'carnet', 'municipio', 'estado']; // Mapeo de columnas
+
+            if (isset($columns[$orderColumnIndex])) {
+                $orderColumn = $columns[$orderColumnIndex];
+                // Para ordenar por columnas de tablas relacionadas, necesitamos JOINs
+                if ($orderColumn == 'nombre') {
+                    $query->join('personas', 'propietarios.persona_id', '=', 'personas.id')
+                        ->orderBy('personas.nombre', $orderDir);
+                } elseif ($orderColumn == 'carnet') {
+                    $query->join('personas', 'propietarios.persona_id', '=', 'personas.id')
+                        ->orderBy('personas.carnet', $orderDir);
+                } elseif ($orderColumn == 'municipio') {
+                    $query->join('municipios', 'propietarios.municipio_id', '=', 'municipios.id')
+                        ->orderBy('municipios.nombre', $orderDir);
+                } else {
+                    $query->orderBy($orderColumn, $orderDir);
+                }
+            }
+
+            // 6. Aplicamos la paginación
+            $propietarios = $query->offset($request->input('start'))
+                ->limit($request->input('length'))
+                ->select('propietarios.*') // Evitar ambigüedad de columnas por los JOINs
                 ->get();
+
+            // 7. Mapeamos los datos al formato que DataTables espera
+            $data = $propietarios->map(function ($propietario) {
+                $estadoBadge = $propietario->estado
+                    ? '<span class="badge badge-success">Activo</span>'
+                    : '<span class="badge badge-danger">Inactivo</span>';
+
+                $acciones = '';
+                if ($propietario->estado) {
+                    $editUrl = route('admin.propietarios.edit', $propietario);
+                    $deleteUrl = route('admin.propietarios.destroy', $propietario);
+                    $acciones .= '<a href="' . $editUrl . '" class="btn btn-sm btn-warning" title="Editar"><i class="fas fa-edit"></i></a> ';
+                    $acciones .= '<form action="' . $deleteUrl . '" method="POST" class="d-inline form-delete">
+                                ' . csrf_field() . '
+                                ' . method_field('DELETE') . '
+                                <button type="submit" class="btn btn-sm btn-danger" title="Desactivar"><i class="fas fa-trash"></i></button>
+                              </form>';
+                } else {
+                    $restoreUrl = route('admin.propietarios.restore', $propietario->id);
+                    $acciones .= '<form action="' . $restoreUrl . '" method="POST" class="d-inline form-restore">
+                                ' . csrf_field() . '
+                                <button type="submit" class="btn btn-sm btn-info" title="Reactivar"><i class="fas fa-undo"></i></button>
+                              </form>';
+                }
+
+                return [
+                    'id' => $propietario->id,
+                    'nombre_completo' => $propietario->persona->nombre_completo,
+                    'carnet' => $propietario->persona->carnet . ' ' . $propietario->persona->expedido,
+                    'municipio' => $propietario->municipio->nombre,
+                    'estado' => $estadoBadge,
+                    'acciones' => $acciones,
+                ];
+            });
+
+            // 8. Devolvemos la respuesta JSON
+            return response()->json([
+                'draw' => intval($request->input('draw')),
+                'recordsTotal' => Propietario::count(),
+                'recordsFiltered' => $recordsFiltered,
+                'data' => $data,
+            ]);
         }
 
-        return view('admin.propietarios.index', compact('propietarios'));
+        // Si no es una petición AJAX, simplemente cargamos la vista
+        return view('admin.propietarios.index');
     }
 
     public function create()
     {
         $municipios = Municipio::all();
-        $expedidoOptions = ['LP', 'CB', 'SC', 'OR', 'PT', 'CH', 'TJ', 'BE', 'PD'];
+        $expedidoOptions = ['LP', 'CB', 'SC', 'OR', 'PT', 'CH', 'TJ', 'BE', 'PD', 'QR'];
         return view('admin.propietarios.create', compact('municipios', 'expedidoOptions'));
     }
 
     public function store(Request $request)
     {
         //\xdebug_info();
-        die('Revisando la información de Xdebug...');
+        //die('Revisando la información de Xdebug...');
         $request->validate([
             'nombre' => 'required|string|max:255',
             'primer_apellido' => 'required|string|max:255',
@@ -59,9 +152,9 @@ class PropietarioController extends Controller
             DB::beginTransaction();
 
             $persona = Persona::create([
-                'nombre' => $request->nombre,
-                'primer_apellido' => $request->primer_apellido,
-                'segundo_apellido' => $request->segundo_apellido,
+                'nombre' => Str::upper($request->nombre),
+                'primer_apellido' => Str::upper($request->primer_apellido),
+                'segundo_apellido' => Str::upper($request->segundo_apellido),
                 'carnet' => $request->carnet,
                 'expedido' => $request->expedido,
                 'telefono' => $request->telefono,
@@ -91,7 +184,7 @@ class PropietarioController extends Controller
     public function edit(Propietario $propietario)
     {
         $municipios = Municipio::all();
-        $expedidoOptions = ['LP', 'CB', 'SC', 'OR', 'PT', 'CH', 'TJ', 'BE', 'PD'];
+        $expedidoOptions = ['LP', 'CB', 'SC', 'OR', 'PT', 'CH', 'TJ', 'BE', 'PD', 'QR'];
         return view('admin.propietarios.edit', compact('propietario', 'municipios', 'expedidoOptions'));
     }
 
@@ -110,9 +203,9 @@ class PropietarioController extends Controller
         try {
             DB::beginTransaction();
             $propietario->persona->update([
-                'nombre' => $request->nombre,
-                'primer_apellido' => $request->primer_apellido,
-                'segundo_apellido' => $request->segundo_apellido,
+                'nombre' => Str::upper($request->nombre),
+                'primer_apellido' => Str::upper($request->primer_apellido),
+                'segundo_apellido' => Str::upper($request->segundo_apellido),
                 'carnet' => $request->carnet,
                 'expedido' => $request->expedido,
                 'telefono' => $request->telefono,
@@ -159,241 +252,156 @@ class PropietarioController extends Controller
         return redirect()->route('admin.propietarios.index')->with('success', 'Propietario reactivado exitosamente.');
     }
 
-    /*public function procesarOcr(Request $request)
-    {
-        $request->validate(['documento_ci' => 'required|file|mimes:pdf,jpg,jpeg,png|max:4096']);
-        $file = $request->file('documento_ci');
-        $imagePath = $file->getPathname();
-        $tempDir = storage_path('app/public/ocr_temp');
-
-        if ($file->getMimeType() == 'application/pdf') {
-            try {
-                if (!file_exists($tempDir)) { mkdir($tempDir, 0755, true); }
-                $imagePath = $tempDir . '/' . uniqid() . '.jpg';
-                (new Pdf($file->getPathname()))->save($imagePath);
-            } catch (\Exception $e) {
-                // --- ERROR MEJORADO ---
-                return response()->json(['error' => 'Error al convertir PDF: ' . $e->getMessage()], 500);
-            }
-        }
-        
-        $manager = ImageManager::withDriver(new ImagickDriver());
-        $manager->read($imagePath)->greyscale()->contrast(40)->save($imagePath);
-
-        try {
-            $text = (new TesseractOCR($imagePath))->lang('spa')->run();
-            $data = $this->parseOcrData($text);
-            
-            if (file_exists($imagePath) && str_contains($imagePath, 'ocr_temp')) { 
-                unlink($imagePath);
-            }
-            return response()->json($data);
-        } catch (\Exception $e) {
-            return response()->json(['error' => 'Error al procesar con Tesseract: ' . $e->getMessage()], 500);
-        }
-    }
-
-    private function parseOcrData($text)
-    {
-        $data = [];
-        if (preg_match('/(Nombres|Nombre)[:\s\n]+([\w\sÁÉÍÓÚÑ]+)/i', $text, $matches)) { $data['nombre'] = trim($matches[2]); }
-        if (preg_match('/(Apellidos|Apellido)[:\s\n]+([\w\sÁÉÍÓÚÑ]+)/i', $text, $matches)) {
-            $apellidos = explode(' ', trim($matches[2]), 2);
-            $data['primer_apellido'] = $apellidos[0] ?? '';
-            $data['segundo_apellido'] = $apellidos[1] ?? '';
-        }
-        if (empty($data['nombre']) && preg_match('/(?:pertenece\sA:)\s*([^\n\r]+)/i', $text, $matches)) {
-            $fullName = explode(' ', trim($matches[1]));
-            $data['nombre'] = array_shift($fullName);
-            $data['primer_apellido'] = array_shift($fullName) ?? '';
-            $data['segundo_apellido'] = implode(' ', $fullName);
-        }
-        if (preg_match('/(Cédula de Identidad|No\.|N°)\s*([\d\.-]+)/i', $text, $matches)) {
-            $data['carnet'] = str_replace(['.', '-'], '', trim($matches[2]));
-        }
-        if (preg_match('/(Fecha de Nacimiento|Nacido el)\s*(\d{1,2}(?:\/| de )\w+(?:\/| de )\d{4})/i', $text, $matches)) {
-            $data['fecha_nacimiento'] = $this->parseSpanishDate(trim($matches[2]));
-        }
-        if (preg_match('/(Fecha de Expiración|Válida hasta el)\s*(INDEFINIDO|\d{1,2}(?:\/| de )\w+(?:\/| de )\d{4})/i', $text, $matches)) {
-            $expiracion = trim($matches[2]);
-            if (strtoupper($expiracion) === 'INDEFINIDO') {
-                $data['ci_es_indefinido'] = true;
-                $data['ci_fecha_caducidad'] = null;
-            } else {
-                $data['ci_es_indefinido'] = false;
-                $data['ci_fecha_caducidad'] = $this->parseSpanishDate($expiracion);
-            }
-        }
-        return $data;
-    }
-
-    private function parseSpanishDate($dateString)
-    {
-        if (strpos($dateString, '/') !== false) {
-            $fecha = \DateTime::createFromFormat('d/m/Y', $dateString);
-            return $fecha ? $fecha->format('Y-m-d') : null;
-        }
-        $months = [
-            'enero' => '01', 'febrero' => '02', 'marzo' => '03', 'abril' => '04', 'mayo' => '05', 'junio' => '06',
-            'julio' => '07', 'agosto' => '08', 'septiembre' => '09', 'octubre' => '10', 'noviembre' => '11', 'diciembre' => '12'
-        ];
-        $dateString = str_ireplace(array_keys($months), array_values($months), strtolower($dateString));
-        $dateString = str_replace(' de ', '/', $dateString);
-        $fecha = \DateTime::createFromFormat('d/m/Y', $dateString);
-        return $fecha ? $fecha->format('Y-m-d') : null;
-    }*/
+    ////////////////////////////////////////////////////////////////////
+    /////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////
+    /////////////////////////////////////////////////////////////////////
 
     public function procesarOcr(Request $request)
     {
-        $request->validate(['documento_ci' => 'required|file|mimes:pdf,jpg,jpeg,png|max:8192']);
+
+        $request->validate([
+            'documento_ci' => 'required|file|mimes:pdf,jpg,png,jpeg|max:10240',
+        ]);
 
         $file = $request->file('documento_ci');
-        $tempDir = public_path('storage/ocr_temp'); 
-        if (!file_exists($tempDir)) mkdir($tempDir, 0755, true);
+        $mimeType = $file->getMimeType();
+        $fileContents = $file->get();
 
-        $originalPath = $tempDir . '/' . uniqid('ocr_original_') . '.' . $file->guessExtension();
-        $file->move($tempDir, basename($originalPath));
+        // 2. Si es PDF, convertir a JPG
+        if ($mimeType === 'application/pdf') {
+            $tempPdfPath = $file->getRealPath();
+            $tempDir = storage_path('app/public/ocr_temp');
+            File::ensureDirectoryExists($tempDir);
+            $tempJpgPath = $tempDir . '/' . uniqid() . '.jpg';
 
-        try {
-            $imagePath = $originalPath;
-
-            // Si es un PDF, conviértelo a imagen
-            if (mime_content_type($originalPath) === 'application/pdf') {
-                $imagePath = $tempDir . '/' . uniqid('pdfimg_') . '.jpg';
-                (new Pdf($originalPath))->resolution(300)->save($imagePath);
-                @unlink($originalPath);
-
-                if (!file_exists($imagePath) || filesize($imagePath) === 0) {
-                    throw new \Exception('La conversión de PDF a imagen falló.');
-                }
-            }
-
-            // Genera variantes de la imagen para mejorar la precisión
-            $imageVariants = $this->generateImageVariants($imagePath, $tempDir);
-
-            // Ejecuta Tesseract en todas las variantes y combina el texto
-            $combinedText = $this->runOcrOnVariants($imageVariants);
-
-            // Analiza el texto combinado para extraer los datos
-            $data = $this->parseOcrData($combinedText);
-
-            // Limpia todos los archivos de imagen temporales
-            foreach ($imageVariants as $path) {
-                if (file_exists($path)) @unlink($path);
-            }
-
-            return response()->json($data);
-        } catch (\Exception $e) {
-            return response()->json(['error' => 'Error procesando OCR: ' . $e->getMessage()], 500);
-        }
-    }
-
-    /**
-     * Crea diferentes versiones de una imagen para mejorar el OCR.
-     */
-    private function generateImageVariants(string $path, string $tempDir): array
-    {
-        try {
-            $variants = [$path];
-            $manager = ImageManager::withDriver(new ImagickDriver());
-
-            // Se lee la imagen aquí. Si falla, se captura el error.
-            $image = $manager->read($path);
-
-            // Variante 1: Escala de grises y contraste
-            $v1Path = $tempDir . '/' . uniqid('var_contrast_') . '.jpg';
-            $manager->read($path)->greyscale()->contrast(30)->save($v1Path);
-            $variants[] = $v1Path;
-
-            // Variante 2: Binarización
-            $v2Path = $tempDir . '/' . uniqid('var_binary_') . '.jpg';
-            $manager->read($path)->greyscale()->contrast(10)->brightness(10)->gamma(1.2)->save($v2Path);
-            $variants[] = $v2Path;
-
-            return $variants;
-        } catch (Exception $e) {
-            // Este error es específico de Intervention Image si no puede leer el archivo.
-            throw new \Exception('Unable to decode input. El archivo de imagen generado desde el PDF podría estar corrupto.');
-        }
-    }
-
-    /**
-     * Ejecuta Tesseract en múltiples imágenes y combina el texto resultante.
-     */
-    private function runOcrOnVariants(array $paths): string
-    {
-        $fullText = '';
-        foreach ($paths as $path) {
             try {
-                $fullText .= (new TesseractOCR($path))->lang('spa')->run() . "\n";
+                (new Pdf($tempPdfPath))->resolution(300)->save($tempJpgPath);
+
+                if (!File::exists($tempJpgPath) || File::size($tempJpgPath) === 0) {
+                    throw new \Exception("La conversión de PDF a imagen falló.");
+                }
+
+                $fileContents = file_get_contents($tempJpgPath);
+                $mimeType = 'image/jpeg';
+                unlink($tempJpgPath);
             } catch (\Exception $e) {
-                // Ignorar si una variante falla
-            }
-        }
-        return $fullText;
-    }
-
-    /**
-     * Analiza el texto crudo del OCR y extrae los datos del carnet de identidad.
-     */
-    private function parseOcrData(string $text)
-    {
-        $data = [];
-
-        // Extraer Nombres y Apellidos (maneja múltiples formatos)
-        if (preg_match('/(?:Nombres|Nombre)[:\s\n]+([^\n\r]+)/i', $text, $matches)) {
-            $data['nombre'] = trim($matches[1]);
-        }
-        if (preg_match('/(?:Apellidos|Apellido)[:\s\n]+([^\n\r]+)/i', $text, $matches)) {
-            $apellidos = explode(' ', trim($matches[1]), 2);
-            $data['primer_apellido'] = $apellidos[0] ?? '';
-            $data['segundo_apellido'] = $apellidos[1] ?? '';
-        }
-        if (empty($data['nombre']) && preg_match('/(?:pertenece\sA:)\s*([^\n\r]+)/i', $text, $matches)) {
-            $fullName = explode(' ', trim($matches[1]));
-            $data['nombre'] = array_shift($fullName) ?? '';
-            $data['primer_apellido'] = array_shift($fullName) ?? '';
-            $data['segundo_apellido'] = implode(' ', $fullName) ?? '';
-        }
-
-        // Extraer Cédula de Identidad
-        if (preg_match('/(?:Cédula de Identidad|No\.|N°)\s*([\d\.-]+)/i', $text, $matches)) {
-            $data['carnet'] = str_replace(['.', '-'], '', trim($matches[2]));
-        }
-
-        // Extraer Fecha de Nacimiento
-        if (preg_match('/(?:Fecha de Nacimiento|Nacido el)\s*(\d{1,2}(?:\/| de )\w+(?:\/| de )\d{4})/i', $text, $matches)) {
-            $data['fecha_nacimiento'] = $this->parseSpanishDate(trim($matches[1]));
-        }
-        if (preg_match('/(?:Fecha de Expiración|Válida hasta el)\s*(INDEFINIDO|\d{1,2}(?:\/| de )\w+(?:\/| de )\d{4})/i', $text, $matches)) {
-            $expiracion = trim($matches[1]);
-            // --- FIN DE LA CORRECCIÓN ---
-
-            if (strtoupper($expiracion) === 'INDEFINIDO') {
-                $data['ci_es_indefinido'] = true;
-                $data['ci_fecha_caducidad'] = null;
-            } else {
-                $data['ci_es_indefinido'] = false;
-                $data['ci_fecha_caducidad'] = $this->parseSpanishDate($expiracion);
+                return response()->json(['error' => 'No se pudo convertir el PDF. Asegúrate de que Imagick y Ghostscript estén instalados.', 'details' => $e->getMessage()], 500);
             }
         }
 
-        return $data;
+        // 3. Preparar y enviar a la API de OpenRouter
+        $base64File = base64_encode($fileContents);
+        $prompt = $this->getPromptParaCarnetIdentidad();
+        $apiKey = env('OPENROUTER_API_KEY');
+
+        if (!$apiKey) {
+            return response()->json(['error' => 'La API Key de OpenRouter no está configurada en .env.'], 500);
+        }
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $apiKey,
+            'Content-Type' => 'application/json',
+            'HTTP-Referer' => config('app.url'),
+            'X-Title' => config('app.name'),
+        ])->timeout(90)->post('https://openrouter.ai/api/v1/chat/completions', [
+            'model' => 'google/gemma-3-12b-it:free', // Un modelo robusto
+            'messages' => [
+                [
+                    'role' => 'user',
+                    'content' => [
+                        ['type' => 'text', 'text' => $prompt],
+                        ['type' => 'image_url', 'image_url' => ['url' => "data:{$mimeType};base64,{$base64File}"]]
+                    ]
+                ]
+            ],
+            'response_format' => ['type' => 'json_object'],
+        ]);
+
+        // 4. Procesar la respuesta
+        if ($response->successful()) {
+            $contentString = $response->json('choices.0.message.content');
+
+            if (!$contentString) {
+                return response()->json(['error' => 'La API no devolvió contenido útil.'], 500);
+            }
+
+            // Limpiar la respuesta para extraer solo el JSON
+            $jsonString = $contentString;
+            if (strpos(trim($jsonString), '```json') === 0) {
+                $jsonString = str_replace('```json', '', $jsonString);
+                $jsonString = str_replace('```', '', $jsonString);
+            }
+
+            $datosExtraidos = json_decode(trim($jsonString), true);
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                return response()->json(['error' => 'La IA no devolvió un JSON válido.', 'raw_response' => $contentString], 400);
+            }
+
+            // Si el campo 'expedido' existe y no es 'QR', lo mapeamos a su abreviatura
+            if (isset($datosExtraidos['expedido']) && strtoupper($datosExtraidos['expedido']) !== 'QR') {
+                $datosExtraidos['expedido'] = $this->mapearDepartamentoAAbreviatura($datosExtraidos['expedido']);
+            }
+
+            return response()->json($datosExtraidos);
+        } else {
+            return response()->json(['error' => 'Error en la comunicación con la API.', 'details' => $response->body()], $response->status());
+        }
     }
 
     /**
-     * Función auxiliar para convertir fechas en formato español a YYYY-MM-DD.
+     * Devuelve el prompt detallado para extraer datos de un carnet de identidad boliviano.
      */
-    private function parseSpanishDate($dateString)
+    private function getPromptParaCarnetIdentidad(): string
     {
-        if (strpos($dateString, '/') !== false) {
-            $fecha = \DateTime::createFromFormat('d/m/Y', $dateString);
-            return $fecha ? $fecha->format('Y-m-d') : null;
+        return <<<PROMPT
+Eres un asistente experto en digitalización de documentos de identidad de Bolivia. Analiza la imagen y extrae la información clave. Responde ÚNICAMENTE en formato JSON válido, sin explicaciones, comentarios o markdown.
+
+Si un dato no se encuentra, utiliza `null` como valor.
+
+Reglas importantes:
+1.  **Nombre Completo:** La estructura más común en Bolivia es `Nombre(s) + Primer Apellido + Segundo Apellido`. Por lo tanto, tu prioridad es identificar los dos apellidos al final del nombre completo. **Sin embargo, debes ser capaz de identificar la excepción: si una persona tiene dos nombres de pila y un solo apellido (ej. "Ana Sofia Perez"), entonces la última palabra es el `primer_apellido`, el `segundo_apellido` es `null`, y las palabras anteriores conforman el `nombre`.** Usa tu juicio para diferenciar entre un segundo nombre de pila y un primer apellido en nombres de tres palabras.
+
+2.  **Fechas:** Todas las fechas deben estar en formato AAAA-MM-DD.
+3.  **Expedido:** Si el carnet tiene un código QR, el valor para "expedido" debe ser "QR". Si no, usa la ciudad que se muestra (ej: "LA PAZ").
+4.  **Expiración Indefinida:** Si la fecha de expiración dice "INDEFINIDO", `ci_es_indefinido` debe ser `true` y `ci_fecha_caducidad` debe ser `null`.
+
+El formato JSON de salida debe ser el siguiente, usando como ejemplo el caso de dos nombres y un apellido:
+{
+  "nombre": "ANA SOFIA",
+  "primer_apellido": "PEREZ",
+  "segundo_apellido": "MAMANI",
+  "carnet": "1234567",
+  "expedido": "LP",
+  "fecha_nacimiento": "1990-01-01",
+  "ci_fecha_caducidad": "2028-01-01",
+  "ci_es_indefinido": false
+}
+PROMPT;
+    }
+
+    private function mapearDepartamentoAAbreviatura(?string $nombreCompleto): ?string
+    {
+        if ($nombreCompleto === null) {
+            return null;
         }
-        $months = ['enero' => '01', 'febrero' => '02', 'marzo' => '03', 'abril' => '04', 'mayo' => '05', 'junio' => '06', 'julio' => '07', 'agosto' => '08', 'septiembre' => '09', 'octubre' => '10', 'noviembre' => '11', 'diciembre' => '12'];
-        $dateString = str_ireplace(array_keys($months), array_values($months), strtolower($dateString));
-        $dateString = str_replace(' de ', '/', $dateString);
-        $fecha = \DateTime::createFromFormat('d/m/Y', $dateString);
-        return $fecha ? $fecha->format('Y-m-d') : null;
+
+        $mapa = [
+            'LA PAZ' => 'LP',
+            'COCHABAMBA' => 'CB',
+            'SANTA CRUZ' => 'SC',
+            'ORURO' => 'OR',
+            'POTOSI' => 'PT',
+            'CHUQUISACA' => 'CH',
+            'TARIJA' => 'TJ',
+            'BENI' => 'BE',
+            'PANDO' => 'PD',
+        ];
+
+        // Normalizamos el input (mayúsculas y sin acentos) para una coincidencia más robusta
+        $nombreNormalizado = strtoupper(str_replace(['Á', 'É', 'Í', 'Ó', 'Ú'], ['A', 'E', 'I', 'O', 'U'], $nombreCompleto));
+
+        return $mapa[$nombreNormalizado] ?? null; // Devuelve la abreviatura o null si no hay coincidencia
     }
 }

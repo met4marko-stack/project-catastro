@@ -7,6 +7,8 @@ Table personas {
   expedido varchar(5)
   fecha_nacimiento date
   telefono varchar(20)
+  ci_fecha_caducidad date
+  ci_es_indefinido bool
   created_at timestamptz
   updated_at timestamptz
 }
@@ -17,6 +19,7 @@ Table users {
   password varchar(255) [not null]
   persona_id int [unique, not null, ref: > personas.id] // Cada usuario es una única persona
   municipio_id int [ref: > municipios.id] // IMPORTANTE: Debe ser NULO para el Super-Admin
+  google2fa_secret text
   created_at timestamptz
   updated_at timestamptz
 }
@@ -37,6 +40,8 @@ Table municipios {
     nombre varchar(255) [not null]
     departamento varchar(255) [not null]
     logo text [not null]
+    created_at timestamptz
+    updated_at timestamptz
 }
 
 Table roles {
@@ -86,31 +91,32 @@ Table planimetrias {
     updated_at timestamptz
 }
 
-
-Table predio {
+Table predios {
     id int [pk, increment]
     inmueble_padre_id int [null]
     propiedad_horizontal bool
     numero_unidad varchar(20) 
     codigo_catastral varchar(255)
+    numero_plano varchar(50)
     manzano varchar(20)
     lote varchar(20)
+    provincia varchar(255)
+    centro_poblado varchar (255)
     zona varchar(255)
-    superficie double
-    superficie_afectada double
-    superficie_excedente double
-    superficie_levantamiento double
-    superficie_util double
-    ubicacion "geometry(Point, 4326)" [not null]
+    sup_levantamiento double //para sup
+    sup_testimonio double    //para area_legal
+    sup_construida double
+    sup_afectada double
+    sup_util double
+    coordenadas "geometry(Polygon, 4326)" [not null]
     frente_principal double
-    terreno_forma varchar(255)
-    servicio_electrico bool
-    servicio_agua bool
-    servicio_alcantarillado bool
-    servicio_telefono bool
-    servicio_alumbrado bool
-    servicio_gas bool   
-    tipo_via varchar(255)
+    agua_potable bool
+    energia_electrica bool
+    alcantarillado bool
+    alumbrado_publico bool
+    gas_domiciliario bool   
+    material_via varchar(255)
+    forma_lote bool
     fotografia_uno text
     fotografia_dos text
     fotografia_tres text
@@ -212,7 +218,7 @@ Table req_historial {
   
   testimonio_anterior_b bool
   testimonio_anterior text
-  folio_anterior_b bool // Corregí el nombre del booleano
+  folio_anterior_b bool
   folio_anterior text
   certificado_tradicion_b bool
   certificado_tradicion text

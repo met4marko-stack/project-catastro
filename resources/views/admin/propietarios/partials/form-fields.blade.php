@@ -45,7 +45,7 @@
             <div class="col-md-4">
                 <div class="form-group">
                     <div class="custom-control custom-checkbox">
-                        <input class="custom-control-input" type="checkbox" id="ci_es_indefinido" name="ci_es_indefinido" {{ old('ci_es_indefinido', $propietario->persona->ci_es_indefinido ?? false) ? 'checked' : '' }}>
+                        <input class="custom-control-input" type="checkbox" id="ci_es_indefinido" name="ci_es_indefinido" value="1" {{ old('ci_es_indefinido', $propietario->persona->ci_es_indefinido ?? false) ? 'checked' : '' }}>
                         <label for="ci_es_indefinido" class="custom-control-label">Indefinido</label>
                     </div>
                 </div>

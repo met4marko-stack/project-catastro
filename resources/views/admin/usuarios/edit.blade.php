@@ -14,6 +14,16 @@
             <h3 class="card-title">Modifique los datos del formulario</h3>
         </div>
         <div class="card-body">
+            @if ($errors->any())
+                <div class="alert alert-danger">
+                    <strong>¡Error!</strong> Por favor, revise los siguientes campos:<br><br>
+                    <ul>
+                        @foreach ($errors->all() as $error)
+                            <li>{{ $error }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
             <form action="{{ route('admin.usuarios.update', $usuario) }}" method="POST">
                 @csrf
                 @method('PUT')
@@ -61,7 +71,7 @@
                                 <div class="form-group">
                                     <div class="custom-control custom-checkbox"><input class="custom-control-input"
                                             type="checkbox" id="ci_es_indefinido" name="ci_es_indefinido"
-                                            {{ old('ci_es_indefinido', $usuario->persona->ci_es_indefinido) ? 'checked' : '' }}><label
+                                            {{ old('ci_es_indefinido', $usuario->persona->ci_es_indefinido) ? 'checked' : '' }} value="1"><label
                                             for="ci_es_indefinido" class="custom-control-label">Indefinido</label></div>
                                 </div>
                             </div>
