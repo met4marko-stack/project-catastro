@@ -111,20 +111,61 @@
                 </div>
                 <hr>
                 <div class="row">
-                    <div class="col-md-4 form-group"><label>Frente Principal (m)</label><input type="number"
-                            step="0.01" name="frente_principal"
+                    <div class="col-md-4 form-group">
+                        <label>Frente Principal (m)</label>
+                        <input type="number" step="0.01" name="frente_principal"
                             value="{{ old('frente_principal', $predio->frente_principal ?? '') }}"
-                            class="form-control"></div>
-                    <div class="col-md-4 form-group"><label>Material de Vía</label><input type="text"
-                            name="material_via" value="{{ old('material_via', $predio->material_via ?? '') }}"
-                            class="form-control"></div>
-                    <div class="col-md-4 form-group"><label>Forma del Lote</label><input type="text"
-                            name="forma_lote" value="{{ old('forma_lote', $predio->forma_lote ?? '') }}"
-                            class="form-control"></div>
+                            class="form-control">
+                    </div>
+                    {{-- CAMBIO: Campo de texto a Select para Material de Vía --}}
+                    <div class="col-md-4 form-group">
+                        <label>Material de Vía</label>
+                        <select name="id_material_via" class="form-control select2">
+                            <option value="">-- Seleccione --</option>
+                            {{-- Asumiendo que pasas $materialesVias desde el controlador --}}
+                            @foreach ($materialesVias as $material)
+                                <option value="{{ $material->id }}"
+                                    {{ old('id_material_via', $predio->id_material_via ?? '') == $material->id ? 'selected' : '' }}>
+                                    {{ $material->nombre }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    {{-- CAMBIO: Campo de texto a Select para Forma del Lote (Booleano) --}}
+                    <div class="col-md-4 form-group">
+                        <label>Forma del Lote</label>
+                        <select name="forma_lote" class="form-control select2">
+                            <option value="">-- Seleccione --</option>
+                            <option value="1"
+                                {{ old('forma_lote', $predio->forma_lote ?? '') == '1' ? 'selected' : '' }}>Regular
+                            </option>
+                            <option value="0"
+                                {{ old('forma_lote', $predio->forma_lote ?? '') == '0' ? 'selected' : '' }}>Irregular
+                            </option>
+                        </select>
+                    </div>
+                </div>
+                {{-- AÑADIR: Nuevo campo para seleccionar la Vía --}}
+                <div class="row">
+                    <div class="col-md-12 form-group">
+                        <label>Vía a la que pertenece</label>
+                        <select name="via_id" class="form-control select2">
+                            <option value="">-- Seleccione una vía --</option>
+                            {{-- Asumiendo que pasas $vias desde el controlador --}}
+                            @foreach ($vias as $via)
+                                <option value="{{ $via->id }}"
+                                    {{ old('via_id', $predio->via_id ?? '') == $via->id ? 'selected' : '' }}>
+                                    {{ $via->nombre }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
+
 
     {{-- Columna Derecha: Datos Secundarios --}}
     <div class="col-md-4">
@@ -214,4 +255,4 @@
 </div>
 
 {{-- Campo oculto para las coordenadas --}}
-<textarea name="coordenadas_text" id="coordenadas_text" style="display: none;">{{ old('coordenadas_text', '[]') }}</textarea>
+<!--<textarea name="coordenadas_text" id="coordenadas_text" style="display: none;">{{ old('coordenadas_text', '[]') }}</textarea>-->

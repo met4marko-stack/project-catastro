@@ -7,7 +7,7 @@
     <form action="{{ route('admin.predios.update', $predio->id) }}" method="POST">
         @csrf
         @method('PUT')
-        @include('admin.predios._form-fields')
+        @include('admin.predios.partials._form-fields')
         <button type="submit" class="btn btn-primary">Actualizar</button>
     </form>
 @stop

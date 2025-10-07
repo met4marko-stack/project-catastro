@@ -7,16 +7,19 @@ use App\Models\Planimetria;
 use App\Models\Predio;
 use App\Models\Propietario;
 use App\Models\Persona;
+use App\Models\Via;
+use App\Models\MaterialVia;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\File;
 use Spatie\PdfToImage\Pdf;
+use Clickbar\Magellan\Data\Geometries\MultiPolygon;
 use Clickbar\Magellan\Data\Geometries\Polygon;
 use Clickbar\Magellan\Data\Geometries\Point;
 use Clickbar\Magellan\Data\Geometries\LineString;
-use Gemini\Laravel\Facades\Gemini;
+
 
 class PredioController extends Controller
 {
@@ -70,18 +73,21 @@ class PredioController extends Controller
         $propietarios = Propietario::with('persona')->where('estado', true)->get();
         $prediosPadre = Predio::where('propiedad_horizontal', true)->get();
         $predio = new Predio();
+        $vias = Via::all(); // O filtrar por municipio si es necesario
+        $materialesVias = MaterialVia::all();
 
-        return view('admin.predios.create', compact('predio', 'municipios', 'planimetrias', 'propietarios', 'prediosPadre'));
+        return view('admin.predios.create', compact('predio', 'municipios', 'planimetrias', 'propietarios', 'prediosPadre', 'vias', 'materialesVias'));
     }
 
     public function store(Request $request)
     {
-        $validatedData = $request->validate([
+        $request->validate([
             // Identificación y Jerarquía
             'inmueble_padre_id' => 'nullable|integer|exists:predios,id',
             'propiedad_horizontal' => 'nullable|boolean',
             'numero_unidad' => 'nullable|string|max:20|required_with:inmueble_padre_id',
             'codigo_catastral' => 'required|string|max:255|unique:predios,codigo_catastral',
+            'numero_matricula_folio' => 'nullable|string|max:255',
             'numero_plano' => 'nullable|string|max:50',
 
             // Ubicación
@@ -110,6 +116,8 @@ class PredioController extends Controller
             'gas_domiciliario' => 'nullable|boolean',
             'material_via' => 'nullable|string|max:255',
             'forma_lote' => 'nullable|string|in:Regular,Irregular',
+            'id_material_via' => 'nullable|integer|exists:materiales_vias,id', // Valida contra la tabla
+            'via_id' => 'nullable|integer|exists:vias,id', // Valida contra la tabla
 
             // Fotografías
             'fotografia_uno' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
@@ -161,23 +169,25 @@ class PredioController extends Controller
                 }
             }
 
-            // 3. Convierte el texto de coordenadas JSON a un objeto Polygon
+            // CAMBIO: Creación de objeto geoespacial
             if ($request->filled('coordenadas_text')) {
                 $points = [];
                 $coordenadasArray = json_decode($request->input('coordenadas_text'), true);
                 foreach ($coordenadasArray as $coord) {
-                    // Asegurarse de que las coordenadas sean numéricas
                     if (is_numeric($coord['este']) && is_numeric($coord['norte'])) {
-                        $points[] = Point::make((float)$coord['este'], (float)$coord['norte']);
+                        // Creamos puntos 3D con Z=0 y M=0 para cumplir con el tipo de la BD (MultiPolygonZM)
+                        $points[] = Point::make((float)$coord['este'], (float)$coord['norte'], 0, 0);
                     }
                 }
 
-                if (count($points) > 2) { // Un polígono necesita al menos 3 puntos
+                if (count($points) > 2) {
                     if (!$this->pointsAreEqual($points[0], end($points))) {
-                        $points[] = $points[0]; // Cierra el polígono si no lo está
+                        $points[] = $points[0]; // Cierra el polígono
                     }
                     $lineString = new LineString($points);
-                    $data['coordenadas'] = new Polygon([$lineString], 4326);
+                    $polygon = new Polygon([$lineString]); // Crea un Polygon
+                    // Envuelve el Polygon dentro de un MultiPolygon y asigna el SRID correcto
+                    $data['coordenadas'] = new MultiPolygon([$polygon], 32719);
                 }
             }
 
@@ -222,13 +232,15 @@ class PredioController extends Controller
         $planimetrias = Planimetria::all();
         $propietarios = Propietario::with('persona')->where('estado', true)->get();
         $prediosPadre = Predio::where('propiedad_horizontal', true)->where('id', '!=', $predio->id)->get();
+        $vias = Via::all();
+        $materialesVias = MaterialVia::all();
 
-        return view('admin.predios.edit', compact('predio', 'municipios', 'planimetrias', 'propietarios', 'prediosPadre'));
+        return view('admin.predios.edit', compact('predio', 'municipios', 'planimetrias', 'propietarios', 'prediosPadre', 'vias', 'materialesVias'));
     }
 
     public function update(Request $request, Predio $predio)
     {
-        $validatedData = $request->validate([
+        $request->validate([
             // Identificación y Jerarquía
             // Se asegura que un predio no pueda ser su propio padre
             'inmueble_padre_id' => 'nullable|integer|exists:predios,id|not_in:' . $predio->id,
@@ -236,6 +248,7 @@ class PredioController extends Controller
             'numero_unidad' => 'nullable|string|max:20|required_with:inmueble_padre_id',
             // La regla 'unique' debe ignorar el registro actual al actualizar
             'codigo_catastral' => 'required|string|max:255|unique:predios,codigo_catastral,' . $predio->id,
+            'numero_matricula_folio' => 'nullable|string|max:255',
             'numero_plano' => 'nullable|string|max:50',
 
             // Ubicación
@@ -263,7 +276,11 @@ class PredioController extends Controller
             'alumbrado_publico' => 'nullable|boolean',
             'gas_domiciliario' => 'nullable|boolean',
             'material_via' => 'nullable|string|max:255',
-            'forma_lote' => 'nullable|boolean',
+            'forma_lote' => 'nullable|string|in:Regular,Irregular',
+            'material_via' => 'nullable|string|max:255',
+            'id_material_via' => 'nullable|integer|exists:materiales_vias,id', // Valida contra la tabla
+            'via_id' => 'nullable|integer|exists:vias,id', // Valida contra la tabla
+
 
             // Fotografías
             'fotografia_uno' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
@@ -297,6 +314,10 @@ class PredioController extends Controller
             $data['alcantarillado'] = $request->has('alcantarillado');
             $data['alumbrado_publico'] = $request->has('alumbrado_publico');
             $data['gas_domiciliario'] = $request->has('gas_domiciliario');
+
+            if ($request->filled('forma_lote')) {
+                $data['forma_lote'] = ($request->input('forma_lote') === 'Regular');
+            }
 
             // 2. Maneja las cargas de archivos de fotografías (si se sube un nuevo archivo, reemplaza el anterior)
             $photoFields = ['fotografia_uno', 'fotografia_dos', 'fotografia_tres', 'fotografia_cuatro', 'fotografia_cinco'];
@@ -499,5 +520,27 @@ El formato JSON debe ser:
   "coordenadas_utm": []
 }
 PROMPT;
+    }
+
+    public function buscar(Request $request)
+    {
+        $request->validate(['codigo_catastral' => 'required|string|max:255']);
+
+        $codigo = $request->input('codigo_catastral');
+
+        // CAMBIO: Se elimina ST_Envelope para obtener la geometría real del predio.
+        // Lo nombramos 'geom_geojson' para mayor claridad.
+        $resultado = DB::table('predios')
+            ->where('codigo_catastral', $codigo)
+            ->whereNull('deleted_at')
+            ->select(DB::raw('ST_AsGeoJSON(ST_Transform(coordenadas, 4326)) as geom_geojson'))
+            ->first();
+
+        if (!$resultado || !$resultado->geom_geojson) {
+            return response()->json(['error' => 'Código Catastral no encontrado.'], 404);
+        }
+
+        // Devolvemos la geometría real en lugar del bbox.
+        return response()->json(['geometry' => json_decode($resultado->geom_geojson)]);
     }
 }

@@ -85,12 +85,21 @@ Route::middleware(['auth', 'nocache'])->group(function () {
         })->name('test.phpinfo');*/
 
         // --- Módulo de Predios ---
-        Route::resource('predios', App\Http\Controllers\PredioController::class)
-            ->middleware('role:Admin-Municipal');
         Route::post('predios/procesar-plano', [App\Http\Controllers\PredioController::class, 'procesarPlano'])
             ->name('predios.procesarPlano')
             ->middleware('role:Admin-Municipal');
+        Route::get('predios/buscar', [App\Http\Controllers\PredioController::class, 'buscar'])
+            ->name('predios.buscar')
+            ->middleware('role:Admin-Municipal');
+        Route::resource('predios', App\Http\Controllers\PredioController::class)
+            ->middleware('role:Admin-Municipal');
+            
+        Route::get('planimetrias/visualizacion', [PlanimetriaController::class, 'visualizacion'])
+            ->name('planimetrias.visualizacion')
+            ->middleware('role:Admin-Municipal');
+        // La ruta del recurso ahora va después.
         Route::resource('planimetrias', PlanimetriaController::class)
-             ->middleware('role:Admin-Municipal');
+            ->middleware('role:Admin-Municipal');
+        
     });
 });

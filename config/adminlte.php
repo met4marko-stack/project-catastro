@@ -338,7 +338,7 @@ return [
             'submenu' => [
                 [
                     'text' => 'Visualización de Planimetrías',
-                    'route'  => '',
+                    'route'  => 'admin.planimetrias.visualizacion',
                     'icon' => 'far fa-fw fa-circle',
                 ],
                 // Aquí podrías añadir más enlaces como "Crear Planimetría", etc.
