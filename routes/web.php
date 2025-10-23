@@ -9,6 +9,8 @@ use App\Http\Controllers\PropietarioController;
 use App\Http\Controllers\Google2FAController;
 use App\Http\Controllers\OcrAIController;
 use App\Http\Controllers\PlanimetriaController;
+use App\Http\Controllers\PublicConsultaController;
+use App\Http\Controllers\TramiteController;
 
 /*
 |--------------------------------------------------------------------------
@@ -20,6 +22,10 @@ use App\Http\Controllers\PlanimetriaController;
 Route::get('/', function () {
     return view('welcome');
 });
+
+// --- RUTAS DE CONSULTA PÚBLICA ---
+Route::get('/consulta', [PublicConsultaController::class, 'index'])->name('public.consulta.index');
+Route::post('/consulta/buscar', [PublicConsultaController::class, 'buscar'])->name('public.consulta.buscar');
 
 Route::post('/ocr/procesar', [OcrAIController::class, 'procesarDocumento'])->name('ocr.procesar');
 
@@ -51,14 +57,12 @@ Route::middleware(['auth', 'nocache'])->group(function () {
         Route::resource('municipios', MunicipioController::class)
             ->middleware('role:Super-Admin');
 
-        // Módulo de Usuarios: accesible para Super-Admin y Admin-Municipal
-        Route::resource('usuarios', UsuarioController::class)
-            ->middleware('role:Super-Admin|Admin-Municipal');
-
         // Ruta para Reactivar un usuario (Soft Delete)
         Route::post('usuarios/{usuario}/restore', [UsuarioController::class, 'restore'])
             ->name('usuarios.restore')
             ->middleware('role:Super-Admin');
+        Route::resource('usuarios', UsuarioController::class)
+            ->middleware('role:Super-Admin|Admin-Municipal');
 
         // Módulo de Historial de Asignaciones: accesible SOLO para Super-Admin
         Route::get('asignaciones', [AsignacionController::class, 'index'])
@@ -66,18 +70,17 @@ Route::middleware(['auth', 'nocache'])->group(function () {
             ->middleware('role:Super-Admin');
 
         // Módulo de Propietarios
-        Route::resource('propietarios', PropietarioController::class)
-            ->middleware('role:Admin-Municipal');
-
         // Ruta para Reactivar un propietario
         Route::post('propietarios/{id}/restore', [PropietarioController::class, 'restore'])
             ->name('propietarios.restore')
             ->middleware('role:Super-Admin|Admin-Municipal');
-
         // --- RUTA AÑADIDA PARA EL OCR ---
         Route::post('propietarios/procesar-ocr', [PropietarioController::class, 'procesarOcr'])
             ->name('propietarios.procesarOcr')
             ->middleware('role:Super-Admin|Admin-Municipal');
+        // Módulo de Propietarios
+        Route::resource('propietarios', PropietarioController::class)
+            ->middleware('role:Admin-Municipal');
 
         // --- RUTA DE PRUEBA PARA VERIFICAR IMAGICK ---
         /*Route::get('test-phpinfo', function () {
@@ -91,15 +94,35 @@ Route::middleware(['auth', 'nocache'])->group(function () {
         Route::get('predios/buscar', [App\Http\Controllers\PredioController::class, 'buscar'])
             ->name('predios.buscar')
             ->middleware('role:Admin-Municipal');
+        Route::get('predios/{predio}/get-propietarios', [App\Http\Controllers\PredioController::class, 'getPropietariosAjax'])->name('predios.getPropietariosAjax');
         Route::resource('predios', App\Http\Controllers\PredioController::class)
             ->middleware('role:Admin-Municipal');
-            
+
+        // --- RUTA PARA TRÁMITES ---
+        // --- RUTAS PARA BÚSQUEDA DINÁMICA DE SOLICITANTES ---
+        Route::get('personas/search-ajax', [App\Http\Controllers\PersonaController::class, 'searchAjax'])->name('personas.searchAjax');
+        // --- RUTA PARA REGISTRO RÁPIDO DE PERSONAS (APODERADOS) ---
+        Route::post('personas/store-ajax', [App\Http\Controllers\PersonaController::class, 'storeAjax'])
+            ->name('personas.storeAjax');
+        // Ruta para añadir un documento a un trámite existente
+        Route::post('tramites/{tramite}/add-documento', [TramiteController::class, 'addDocumento'])->name('tramites.addDocumento');
+        // Ruta para actualizar el estado o fechas de un trámite
+        Route::put('tramites/{tramite}/update-status', [TramiteController::class, 'updateStatus'])->name('tramites.updateStatus');
+        // --- RUTA PARA ACTUALIZAR EL ESTADO DE UN DOCUMENTO ESPECÍFICO ---
+        Route::post('tramites/{tramite}/documentos/{documento}/update-status', [TramiteController::class, 'updateDocumentoStatus'])->name('tramites.documento.updateStatus');
+        // --- RUTA PARA GENERAR LA CERTIFICACIÓN TÉCNICA ---
+        Route::get('tramites/{tramite}/generar-certificacion', [TramiteController::class, 'generarCertificacionTecnica'])->name('tramites.generarCertificacion');
+
+        Route::post('tramites/{tramite}/restore', [TramiteController::class, 'restore'])->name('tramites.restore');
+        Route::resource('tramites', TramiteController::class)
+            ->middleware('role:Admin-Municipal');
+
+        // Módulo de Planimetrías
         Route::get('planimetrias/visualizacion', [PlanimetriaController::class, 'visualizacion'])
             ->name('planimetrias.visualizacion')
             ->middleware('role:Admin-Municipal');
-        // La ruta del recurso ahora va después.
         Route::resource('planimetrias', PlanimetriaController::class)
             ->middleware('role:Admin-Municipal');
-        
+
     });
 });

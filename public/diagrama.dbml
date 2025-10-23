@@ -152,7 +152,7 @@ Table tramites {
     fecha_ingreso date
     fecha_inspeccion date
     fecha_conclusion date
-    hoja_ruta varchar(255)
+    hoja_ruta int
     estado varchar(255)
     observaciones text
     created_at timestamptz

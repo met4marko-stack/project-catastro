@@ -326,6 +326,12 @@ return [
             'can'  => 'ver-seccion-admin-municipal',
         ],
         [
+            'text' => 'Trámites',
+            'route'  => 'admin.tramites.index', // Asumimos que esta será la ruta principal
+            'icon' => 'fas fa-fw fa-file-signature', // Ícono para trámites/documentos
+            'can'  => 'ver-seccion-admin-municipal',
+        ],
+        [
             'text' => 'Historial de Asignaciones',
             'route'  => 'admin.asignaciones.index',
             'icon' => 'fas fa-fw fa-history',

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasMany; 
 
 class Persona extends Model
 {
@@ -27,6 +28,15 @@ class Persona extends Model
     public function user(): HasOne
     {
         return $this->hasOne(User::class);
+    }
+
+    /**
+     * Una persona puede tener múltiples registros como propietario
+     * (ej. uno por cada municipio en el que tiene propiedades).
+     */
+    public function propietarios(): HasMany
+    {
+        return $this->hasMany(Propietario::class);
     }
 
     /**

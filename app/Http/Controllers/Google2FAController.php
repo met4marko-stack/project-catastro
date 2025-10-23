@@ -10,9 +10,6 @@ use Illuminate\Support\Facades\Hash;
 
 class Google2FAController extends Controller
 {
-    /**
-     * Muestra la página para configurar 2FA.
-     */
     public function showEnableForm(Request $request)
     {
         $user = Auth::user();
@@ -25,7 +22,7 @@ class Google2FAController extends Controller
         $qrCodeInline = $google2fa->getQRCodeInline(
             config('app.name'),
             $user->email,
-            $secretKey // Usar la clave de la sesión
+            $secretKey 
         );
 
         return view('auth.2fa_enable', [

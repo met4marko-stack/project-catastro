@@ -539,8 +539,28 @@ PROMPT;
         if (!$resultado || !$resultado->geom_geojson) {
             return response()->json(['error' => 'Código Catastral no encontrado.'], 404);
         }
-
-        // Devolvemos la geometría real en lugar del bbox.
         return response()->json(['geometry' => json_decode($resultado->geom_geojson)]);
+    }
+
+    /**
+     * Devuelve los propietarios de un predio específico en formato JSON.
+     */
+    public function getPropietariosAjax(Predio $predio)
+    {
+        $predio->load(['propietarios' => function ($query) {
+            $query->where('propietarios.estado', true)->with('persona');
+        }]);
+
+        $propietariosData = $predio->propietarios->map(function($propietario) {
+            if ($propietario->persona) {
+                return [
+                    'id' => $propietario->persona->id,
+                    'text' => $propietario->persona->nombre_completo . ' (' . $propietario->persona->carnet . ')'
+                ];
+            }
+            return null;
+        })->filter(); 
+
+        return response()->json($propietariosData);
     }
 }

@@ -23,108 +23,72 @@ class PropietarioController extends Controller
 {
     public function index(Request $request)
     {
-        // Si la petición es AJAX (de DataTables), procesamos los datos
         if ($request->ajax()) {
             $user = Auth::user();
 
-            // 1. Empezamos la consulta base
-            $query = Propietario::with(['persona', 'municipio']);
+            // Query base con joins para poder buscar/ordenar en columnas relacionadas
+            $query = Propietario::leftJoin('personas', 'propietarios.persona_id', '=', 'personas.id')
+                ->leftJoin('municipios', 'propietarios.municipio_id', '=', 'municipios.id')
+                ->select(
+                    'propietarios.*',
+                    DB::raw("CONCAT_WS(' ', personas.nombre, personas.primer_apellido, personas.segundo_apellido) AS nombre_completo"),
+                    'personas.carnet as persona_carnet',
+                    'personas.expedido as persona_expedido',
+                    'municipios.nombre as municipio_nombre'
+                );
 
-            // 2. Filtramos por municipio para rol 'Admin-Municipal'
+            // Filtrar por municipio del usuario si aplica
             if ($user->hasRole('Admin-Municipal')) {
-                $query->where('municipio_id', $user->municipio_id);
-            }
-
-            // 3. Aplicamos el filtro de búsqueda global
-            if ($search = $request->input('search.value')) {
-                $query->where(function ($q) use ($search) {
-                    $q->whereHas('persona', function ($q) use ($search) {
-                        $q->where('nombre', 'like', "%{$search}%")
-                            ->orWhere('primer_apellido', 'like', "%{$search}%")
-                            ->orWhere('segundo_apellido', 'like', "%{$search}%")
-                            ->orWhere('carnet', 'like', "%{$search}%");
-                    })
-                        ->orWhereHas('municipio', function ($q) use ($search) {
-                            $q->where('nombre', 'like', "%{$search}%");
-                        });
-                });
-            }
-
-            // 4. Obtenemos el total de registros filtrados para la paginación
-            $recordsFiltered = $query->count();
-
-            // 5. Aplicamos el ordenamiento
-            $orderColumnIndex = $request->input('order.0.column');
-            $orderDir = $request->input('order.0.dir');
-            $columns = ['id', 'nombre', 'carnet', 'municipio', 'estado']; // Mapeo de columnas
-
-            if (isset($columns[$orderColumnIndex])) {
-                $orderColumn = $columns[$orderColumnIndex];
-                // Para ordenar por columnas de tablas relacionadas, necesitamos JOINs
-                if ($orderColumn == 'nombre') {
-                    $query->join('personas', 'propietarios.persona_id', '=', 'personas.id')
-                        ->orderBy('personas.nombre', $orderDir);
-                } elseif ($orderColumn == 'carnet') {
-                    $query->join('personas', 'propietarios.persona_id', '=', 'personas.id')
-                        ->orderBy('personas.carnet', $orderDir);
-                } elseif ($orderColumn == 'municipio') {
-                    $query->join('municipios', 'propietarios.municipio_id', '=', 'municipios.id')
-                        ->orderBy('municipios.nombre', $orderDir);
+                if ($user->municipio_id) {
+                    $query->where('propietarios.municipio_id', $user->municipio_id);
                 } else {
-                    $query->orderBy($orderColumn, $orderDir);
+                    // Opción segura: no aplicar filtro si no tiene municipio asignado
+                    // (si quieres bloquear el acceso en ese caso, usa whereRaw('0 = 1');)
                 }
             }
 
-            // 6. Aplicamos la paginación
-            $propietarios = $query->offset($request->input('start'))
-                ->limit($request->input('length'))
-                ->select('propietarios.*') // Evitar ambigüedad de columnas por los JOINs
-                ->get();
+            // Usamos yajra datatables 
+            return datatables()->of($query)
+                ->addIndexColumn()
+                ->addColumn('nombre_completo', function ($row) {
+                    return $row->nombre_completo ?? trim(($row->nombre ?? '') . ' ' . ($row->primer_apellido ?? '') . ' ' . ($row->segundo_apellido ?? ''));
+                })
+                ->addColumn('carnet', function ($row) {
+                    return trim(($row->persona_carnet ?? '') . ' ' . ($row->persona_expedido ?? ''));
+                })
+                ->addColumn('municipio', function ($row) {
+                    return $row->municipio_nombre ?? '';
+                })
+                ->addColumn('estado', function ($row) {
+                    return $row->estado
+                        ? '<span class="badge badge-success">Activo</span>'
+                        : '<span class="badge badge-danger">Inactivo</span>';
+                })
+                ->addColumn('acciones', function ($row) {
+                    $editUrl = route('admin.propietarios.edit', $row->id);
+                    $deleteUrl = route('admin.propietarios.destroy', $row->id);
+                    $restoreUrl = route('admin.propietarios.restore', $row->id);
 
-            // 7. Mapeamos los datos al formato que DataTables espera
-            $data = $propietarios->map(function ($propietario) {
-                $estadoBadge = $propietario->estado
-                    ? '<span class="badge badge-success">Activo</span>'
-                    : '<span class="badge badge-danger">Inactivo</span>';
-
-                $acciones = '';
-                if ($propietario->estado) {
-                    $editUrl = route('admin.propietarios.edit', $propietario);
-                    $deleteUrl = route('admin.propietarios.destroy', $propietario);
-                    $acciones .= '<a href="' . $editUrl . '" class="btn btn-sm btn-warning" title="Editar"><i class="fas fa-edit"></i></a> ';
-                    $acciones .= '<form action="' . $deleteUrl . '" method="POST" class="d-inline form-delete">
-                                ' . csrf_field() . '
-                                ' . method_field('DELETE') . '
-                                <button type="submit" class="btn btn-sm btn-danger" title="Desactivar"><i class="fas fa-trash"></i></button>
-                              </form>';
-                } else {
-                    $restoreUrl = route('admin.propietarios.restore', $propietario->id);
-                    $acciones .= '<form action="' . $restoreUrl . '" method="POST" class="d-inline form-restore">
-                                ' . csrf_field() . '
-                                <button type="submit" class="btn btn-sm btn-info" title="Reactivar"><i class="fas fa-undo"></i></button>
-                              </form>';
-                }
-
-                return [
-                    'id' => $propietario->id,
-                    'nombre_completo' => $propietario->persona->nombre_completo,
-                    'carnet' => $propietario->persona->carnet . ' ' . $propietario->persona->expedido,
-                    'municipio' => $propietario->municipio->nombre,
-                    'estado' => $estadoBadge,
-                    'acciones' => $acciones,
-                ];
-            });
-
-            // 8. Devolvemos la respuesta JSON
-            return response()->json([
-                'draw' => intval($request->input('draw')),
-                'recordsTotal' => Propietario::count(),
-                'recordsFiltered' => $recordsFiltered,
-                'data' => $data,
-            ]);
+                    $acciones = '';
+                    if ($row->estado) {
+                        $acciones .= '<a href="' . $editUrl . '" class="btn btn-sm btn-warning" title="Editar"><i class="fas fa-edit"></i></a> ';
+                        $acciones .= '<form action="' . $deleteUrl . '" method="POST" class="d-inline form-delete" style="display:inline">'
+                            . csrf_field()
+                            . method_field('DELETE')
+                            . '<button type="submit" class="btn btn-sm btn-danger" title="Desactivar"><i class="fas fa-trash"></i></button>'
+                            . '</form>';
+                    } else {
+                        $acciones .= '<form action="' . $restoreUrl . '" method="POST" class="d-inline form-restore">'
+                            . csrf_field()
+                            . '<button type="submit" class="btn btn-sm btn-info" title="Reactivar"><i class="fas fa-undo"></i></button>'
+                            . '</form>';
+                    }
+                    return $acciones;
+                })
+                ->rawColumns(['estado', 'acciones'])
+                ->toJson();
         }
 
-        // Si no es una petición AJAX, simplemente cargamos la vista
         return view('admin.propietarios.index');
     }
 
