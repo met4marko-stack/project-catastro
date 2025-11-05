@@ -137,8 +137,8 @@
                         $('input[name="lote"]').val(iden.lote || '');
 
                         let ubi = response.ubicacion || {};
-                        $('input[name="provincia"]').val(ubi.provincia || '');
-                        $('input[name="centro_poblado"]').val(ubi.centro_poblado || '');
+                        $('select[name="provincia_id"]').val(response.provincia_id || '').trigger('change'); 
+                        $('select[name="centro_poblado_id"]').val(response.centro_poblado_id || '').trigger('change');
                         $('input[name="zona"]').val(ubi.zona || '');
 
                         let sup = response.superficies || {};

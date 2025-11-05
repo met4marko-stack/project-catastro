@@ -16,6 +16,7 @@ class TramiteDocumento extends Model
         'tramite_id',
         'requisito_id',
         'estado_id',
+        'user_id',
         'ruta_archivo',
         'nombre_original',
         'observaciones',

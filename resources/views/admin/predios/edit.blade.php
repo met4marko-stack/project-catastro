@@ -19,6 +19,8 @@ $(document).ready(function() {
     // Llenar los selects con los datos del $predio
     $('#planimetria_id').val('{{ $predio->planimetria_id }}').trigger('change');
     $('#propietarios').val(@json($predio->propietarios->pluck('id'))).trigger('change');
+    $('select[name="provincia_id"]').val('{{ $predio->provincia_id }}').trigger('change');
+    $('select[name="centro_poblado_id"]').val('{{ $predio->centro_poblado_id }}').trigger('change');
 });
 </script>
 @stop

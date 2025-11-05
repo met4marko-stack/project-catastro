@@ -5,6 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\Provincia;
+use App\Models\CentroPoblado;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -18,18 +20,18 @@ class Predio extends Model
 
     protected $fillable = [
         'inmueble_padre_id', 'propiedad_horizontal', 'numero_unidad', 'codigo_catastral',
-        'numero_plano', 'manzano', 'lote', 'provincia', 'centro_poblado', 'zona',
+        'numero_plano', 'manzano', 'lote', 'provincia_id', 'centro_poblado_id', 'zona',
         'sup_levantamiento', 'sup_testimonio', 'sup_construida', 'sup_afectada', 'sup_util',
         'coordenadas', 'frente_principal', 'agua_potable', 'energia_electrica', 'alcantarillado',
         'alumbrado_publico', 'gas_domiciliario',
-        // CAMBIO: Se reemplaza 'material_via' por las nuevas claves foráneas
         'id_material_via',
         'via_id',
+        'plano_aprobado',
         'forma_lote',
         'fotografia_uno', 'fotografia_dos', 'fotografia_tres', 'fotografia_cuatro', 'fotografia_cinco',
         'colindante_norte', 'colindante_sur', 'colindante_este', 'colindante_oeste',
         'planimetria_id', 'municipio_id',
-        'numero_matricula_folio', // <-- AÑADIR: Faltaba esta columna
+        'numero_matricula_folio', 
     ];
 
     protected $casts = [
@@ -84,5 +86,15 @@ class Predio extends Model
         return $this->belongsToMany(Propietario::class, 'propietarios_predios')
                     ->withPivot('estado', 'fecha_inicio', 'fecha_fin')
                     ->withTimestamps();
+    }
+
+    public function provincia(): BelongsTo
+    {
+        return $this->belongsTo(Provincia::class);
+    }
+
+    public function centroPoblado(): BelongsTo
+    {
+        return $this->belongsTo(CentroPoblado::class, 'centro_poblado_id');
     }
 }

@@ -57,11 +57,30 @@
                             name="zona" value="{{ old('zona', $predio->zona ?? '') }}" class="form-control"></div>
                 </div>
                 <div class="row">
-                    <div class="col-md-6 form-group"><label>Provincia</label><input type="text" name="provincia"
-                            value="{{ old('provincia', $predio->provincia ?? '') }}" class="form-control"></div>
-                    <div class="col-md-6 form-group"><label>Centro Poblado</label><input type="text"
-                            name="centro_poblado" value="{{ old('centro_poblado', $predio->centro_poblado ?? '') }}"
-                            class="form-control"></div>
+                    <div class="col-md-6 form-group">
+                        <label>Provincia</label>
+                        <select name="provincia_id" class="form-control select2">
+                            <option value="">-- Seleccione una Provincia --</option>
+                            @foreach($provincias as $provincia)
+                                <option value="{{ $provincia->id }}"
+                                    {{ old('provincia_id', $predio->provincia_id ?? '') == $provincia->id ? 'selected' : '' }}>
+                                    {{ $provincia->nombre }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-md-6 form-group">
+                        <label>Centro Poblado</label>
+                        <select name="centro_poblado_id" class="form-control select2">
+                            <option value="">-- Seleccione un Centro Poblado --</option>
+                            @foreach($centrosPoblados as $centro)
+                                <option value="{{ $centro->id }}"
+                                    {{ old('centro_poblado_id', $predio->centro_poblado_id ?? '') == $centro->id ? 'selected' : '' }}>
+                                    {{ $centro->nombre }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
                 </div>
                 <hr>
                 <div class="row">

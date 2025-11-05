@@ -131,7 +131,6 @@ class UsuarioController extends Controller
                 'expedido' => $request->expedido,
                 'telefono' => $request->telefono,
                 'fecha_nacimiento' => $request->fecha_nacimiento,
-                // --- DATOS AÑADIDOS ---
                 'ci_es_indefinido' => $request->has('ci_es_indefinido'),
                 'ci_fecha_caducidad' => $request->has('ci_es_indefinido') ? null : $request->ci_fecha_caducidad,
             ]);

@@ -329,7 +329,8 @@ return [
             'text' => 'Trámites',
             'route'  => 'admin.tramites.index', // Asumimos que esta será la ruta principal
             'icon' => 'fas fa-fw fa-file-signature', // Ícono para trámites/documentos
-            'can'  => 'ver-seccion-admin-municipal',
+            'can'  => 'gestionar-tramites',
+            //'can'  => 'ver-seccion-admin-municipal',
         ],
         [
             'text' => 'Historial de Asignaciones',
@@ -337,7 +338,10 @@ return [
             'icon' => 'fas fa-fw fa-history',
             'can'  => 'ver-seccion-super-admin', // Permiso para Super-Admin
         ],
-        ['header' => 'GESTIÓN TERRITORIAL'],
+        [
+            'header' => 'GESTIÓN TERRITORIAL',
+            'can'  => 'ver-seccion-admin-municipal',
+        ],
         [
             'text'    => 'Planimetrías',
             'icon'    => 'fas fa-fw fa-map-marked-alt',
@@ -346,11 +350,16 @@ return [
                     'text' => 'Visualización de Planimetrías',
                     'route'  => 'admin.planimetrias.visualizacion',
                     'icon' => 'far fa-fw fa-circle',
+                    'can'  => 'ver-seccion-admin-municipal',
                 ],
-                // Aquí podrías añadir más enlaces como "Crear Planimetría", etc.
             ],
         ],
         ['header' => 'CONFIGURACIÓN DE CUENTA'],
+        [
+            'text' => 'Mi Perfil',
+            'route'  => 'admin.profile.edit', // Esta ruta la crearemos en web.php
+            'icon' => 'fas fa-fw fa-user-edit',
+        ],
         [
             'text' => 'Seguridad (2FA)',
             'route'  => '2fa.enable', // Apunta a la ruta para activar 2FA

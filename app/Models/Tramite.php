@@ -8,10 +8,26 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Carbon\Carbon;
 
 class Tramite extends Model
 {
     use HasFactory, SoftDeletes;
+
+    /**
+     * Mutador para el atributo 'estado_id'.
+     * 
+     */
+    public function setEstadoIdAttribute($value)
+    {
+        if ($value == 4 && is_null($this->attributes['fecha_conclusion'])) {
+            // 2. Establece la fecha de conclusión
+            $this->attributes['fecha_conclusion'] = Carbon::now();
+        }
+
+        // 3. Importante: Asigna el valor del estado_id
+        $this->attributes['estado_id'] = $value;
+    }
 
     protected $fillable = [
         'predio_id',

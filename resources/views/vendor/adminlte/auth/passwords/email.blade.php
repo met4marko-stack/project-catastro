@@ -1,32 +1,34 @@
-@extends('adminlte::auth.auth-page', ['authType' => 'login'])
+@extends('adminlte::auth.auth-page', ['authType' => 'pass-reset'])
 
 @php
-    $passEmailUrl = View::getSection('password_email_url') ?? config('adminlte.password_email_url', 'password/email');
+    $passResetUrl = View::getSection('password_reset_url') ?? config('adminlte.password_reset_url', 'password/reset');
 
     if (config('adminlte.use_route_url', false)) {
-        $passEmailUrl = $passEmailUrl ? route($passEmailUrl) : '';
+        $passResetUrl = $passResetUrl ? route($passResetUrl) : '';
     } else {
-        $passEmailUrl = $passEmailUrl ? url($passEmailUrl) : '';
+        $passResetUrl = $passResetUrl ? url($passResetUrl) : '';
     }
 @endphp
+
+@section('title', __('adminlte::adminlte.password_reset_message'))
 
 @section('auth_header', __('adminlte::adminlte.password_reset_message'))
 
 @section('auth_body')
 
-    @if(session('status'))
+    @if (session('status'))
         <div class="alert alert-success">
             {{ session('status') }}
         </div>
     @endif
 
-    <form action="{{ $passEmailUrl }}" method="post">
+    <form action="{{ route('password.email') }}" method="post">
         @csrf
 
         {{-- Email field --}}
         <div class="input-group mb-3">
             <input type="email" name="email" class="form-control @error('email') is-invalid @enderror"
-                value="{{ old('email') }}" placeholder="{{ __('adminlte::adminlte.email') }}" autofocus>
+                   value="{{ old('email') }}" placeholder="{{ __('adminlte::adminlte.email') }}" autofocus>
 
             <div class="input-group-append">
                 <div class="input-group-text">
@@ -43,9 +45,9 @@
 
         {{-- Send reset link button --}}
         <button type="submit" class="btn btn-block {{ config('adminlte.classes_auth_btn', 'btn-flat btn-primary') }}">
-            <span class="fas fa-share-square"></span>
+            <span class="fas fa-paper-plane"></span>
             {{ __('adminlte::adminlte.send_password_reset_link') }}
         </button>
-    </form>
 
+    </form>
 @stop

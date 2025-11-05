@@ -25,7 +25,7 @@
             </ul>
         </div>
     @endif
-    
+
     {{-- Mostrar mensajes de éxito o error --}}
     @if (session('success'))
         <div class="alert alert-success alert-dismissible fade show" role="alert">
@@ -81,9 +81,10 @@
                                         </td>
                                         <td>
                                             @if ($documento)
-                                                <a href="{{ Storage::disk('s3')->url($documento->ruta_archivo) }}"
-                                                    target="_blank" class="btn btn-xs btn-info" title="Ver Documento"><i
-                                                        class="fas fa-eye"></i> Ver</a>
+                                                <a href="{{ route('admin.tramites.verDocumento', $documento->id) }}"
+                                                    target="_blank" class="btn btn-xs btn-info" title="Ver Documento">
+                                                    <i class="fas fa-eye"></i> Ver
+                                                </a>
 
                                                 {{-- BOTÓN PARA CAMBIAR ESTADO --}}
                                                 <button class="btn btn-xs btn-default text-dark btn-change-status"
@@ -120,6 +121,43 @@
 
         {{-- Columna Derecha: Información y Acciones --}}
         <div class="col-md-4">
+
+            {{-- =============================================================== --}}
+            {{-- ▼▼▼ Pega aquí el nuevo card de Análisis Predictivo ▼▼▼ --}}
+            {{-- =============================================================== --}}
+
+            @if (isset($predictions))
+                <div class="card card-purple">
+                    <div class="card-header">
+                        <h3 class="card-title">Análisis Predictivo</h3>
+                    </div>
+                    <div class="card-body">
+                        <strong><i class="fas fa-exclamation-triangle mr-1"></i> Nivel de Riesgo Estimado</strong>
+                        <p class="text-muted">
+                            @if ($predictions['riesgo_prediccion_label'] == 'Alto')
+                                <span class="badge badge-danger" style="font-size: 1em;">Alto</span>
+                                <small>({{ $predictions['riesgo_probabilidad'] }}% de probabilidad)</small>
+                            @else
+                                <span class="badge badge-success" style="font-size: 1em;">Bajo</span>
+                                <small>({{ 100 - $predictions['riesgo_probabilidad'] }}% de probabilidad)</small>
+                            @endif
+                        </p>
+                        <p class="text-muted small">Este trámite tiene características similares a otros que han sido
+                            observados o rechazados anteriormente.</p>
+                        <hr>
+
+                        <strong><i class="far fa-clock mr-1"></i> Tiempo de Resolución Estimado</strong>
+                        <p class="text-muted">
+                            Aproximadamente **{{ $predictions['dias_prediccion'] }} días**.
+                        </p>
+                    </div>
+                </div>
+            @else
+                <div class="alert alert-warning">
+                    El servicio de predicción no está disponible en este momento.
+                </div>
+            @endif
+
             {{-- Card para actualizar estado general del trámite --}}
             <div class="card card-secondary">
                 <div class="card-header">

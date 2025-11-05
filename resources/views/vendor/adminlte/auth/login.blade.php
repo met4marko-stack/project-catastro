@@ -25,7 +25,6 @@
 @section('auth_body')
     <form action="{{ $loginUrl }}" method="post">
         @csrf
-
         {{-- Email field --}}
         <div class="input-group mb-3">
             <input type="email" name="email" class="form-control @error('email') is-invalid @enderror"
@@ -87,11 +86,11 @@
 @section('auth_footer')
     {{-- Password reset link --}}
     @if($passResetUrl)
-        <!--<p class="my-0">
+        <p class="my-0">
             <a href="{{ $passResetUrl }}">
                 {{ __('adminlte::adminlte.i_forgot_my_password') }}
             </a>
-        </p>-->
+        </p>
     @endif
 
     {{-- Register link --}}

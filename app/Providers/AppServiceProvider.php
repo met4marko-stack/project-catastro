@@ -46,5 +46,14 @@ class AppServiceProvider extends ServiceProvider
             return $user->hasRole('Admin-Municipal');
         });
 
+        // Gate para gestionar trámites
+        Gate::define('gestionar-tramites', function (User $user) {
+            // Un Super-Admin siempre tiene acceso
+            if ($user->hasRole('Super-Admin')) {
+                return true;
+            }
+            // Permitir a los roles específicos
+            return $user->hasRole(['Admin-Municipal', 'Asesor-Legal', 'Inspector-Tecnico']);
+        });
     }
 }

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\PredictionService;
+
 use App\Models\Predio;
 use App\Models\Tramite;
 use App\Models\TramiteTipo;
@@ -17,6 +19,8 @@ use Illuminate\Support\Facades\Storage; // para el almacenamiento de los archivo
 use Illuminate\Support\Str;
 use App\Models\Requisito;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+
 
 class TramiteController extends Controller
 {
@@ -171,15 +175,16 @@ class TramiteController extends Controller
     /**
      * Muestra los detalles de un trámite específico.
      */
-    public function show(Tramite $tramite)
+    public function show(Tramite $tramite, PredictionService $predictionService)
     {
         // Cargar todas las relaciones necesarias para la vista de detalles
         $tramite->load(['predio.propietarios.persona', 'solicitante', 'tipo.requisitos', 'estado', 'documentos.requisito', 'documentos.estado']);
+        $estados_disponibles = TramiteEstado::orderBy('id')->get();
 
-        // Cargar los posibles estados para el dropdown de cambio de estado
-        $estados_disponibles = TramiteEstado::orderBy('nombre')->get();
+        // Llamar al servicio para obtener las predicciones
+        $predictions = $predictionService->getPredictions($tramite);
 
-        return view('admin.tramites.show', compact('tramite', 'estados_disponibles'));
+        return view('admin.tramites.show', compact('tramite', 'estados_disponibles', 'predictions'));
     }
 
     /**
@@ -254,55 +259,67 @@ class TramiteController extends Controller
             'requisito_id' => 'required|exists:requisitos,id',
         ]);
 
+        $file = $request->file('documento');
+        $requisito = Requisito::find($request->requisito_id);
+        $estadoRecibido = DocumentoEstado::where('nombre', 'RECIBIDO')->firstOrFail();
+
+        // Definir el disco, la ruta y el nombre del archivo
+        $disk = Storage::disk('documentos_locales');
+        $filePath = "tramite_{$tramite->id}/requisitos";
+        $fileName = "requisito_{$request->requisito_id}_"
+            . Str::slug($requisito->nombre) . "_"
+            . now()->format('YmdHis') . "."
+            . $file->getClientOriginalExtension();
+
+        $newPath = null; // Variable para rastrear el archivo nuevo
+
+        DB::beginTransaction(); // <-- 1. Iniciar la transacción
+
         try {
-            DB::beginTransaction();
-
-            // 1. Buscar si ya existe un documento para este requisito.
+            // 2. Buscar el documento existente
             $documentoExistente = TramiteDocumento::where('tramite_id', $tramite->id)
-                ->where('requisito_id', $request->requisito_id)
-                ->first();
+                ->where('requisito_id', $request->requisito_id)->first();
 
-            $file = $request->file('documento');
-            $requisito = Requisito::findOrFail($request->requisito_id);
-            $predio = $tramite->predio;
-
-            // 2. Construir la ruta y el nombre del NUEVO archivo.
-            $municipioSlug = Str::slug($tramite->municipio->nombre, '_');
-            $filePath = "{$municipioSlug}/documentos/tramite_{$tramite->id}";
-            $codigoCatastralSanitized = preg_replace('/[^a-zA-Z0-9]/', '', $predio->codigo_catastral);
-            $requisitoSlug = Str::slug($requisito->nombre);
-            $timestamp = now()->format('Ymd-His');
-            $fileName = "{$codigoCatastralSanitized}_{$requisitoSlug}_{$timestamp}." . $file->getClientOriginalExtension();
-
-            // 3. Subir el NUEVO archivo a S3.
-            $path = $file->storeAs($filePath, $fileName, 's3');
-
-            // 4. Si existía un documento anterior, eliminar el ARCHIVO ANTIGUO de S3.
-            if ($documentoExistente) {
-                Storage::disk('s3')->delete($documentoExistente->ruta_archivo);
+            // 3. Si existía un archivo anterior, borrarlo del disco
+            if ($documentoExistente && $documentoExistente->ruta_archivo) {
+                $disk->delete($documentoExistente->ruta_archivo);
             }
 
-            $estadoRecibido = DocumentoEstado::where('nombre', 'RECIBIDO')->firstOrFail();
+            // 4. Guardar el nuevo archivo FÍSICO en el disco.
+            //    Esta operación puede fallar (ej. permisos, disco lleno)
+            $newPath = $file->storeAs($filePath, $fileName, 'documentos_locales');
 
-            // 5. Crear o actualizar el registro en la base de datos (gracias a updateOrCreate).
+            // 5. Guardar la nueva ruta en la BASE DE DATOS.
+            //    Esta operación también puede fallar (ej. constraint de BD)
             TramiteDocumento::updateOrCreate(
-                [
-                    'tramite_id' => $tramite->id,
-                    'requisito_id' => $request->requisito_id,
-                ],
-                [
-                    'estado_id' => $estadoRecibido->id,
-                    'ruta_archivo' => $path,
-                    'nombre_original' => $file->getClientOriginalName(),
-                    'observaciones' => null,
-                ]
-            );
+            ['tramite_id' => $tramite->id, 'requisito_id' => $request->requisito_id],
+            [
+                'ruta_archivo' => $newPath,
+                'nombre_original' => $file->getClientOriginalName(),
+                'user_id' => Auth::id(), 
+                
+                // --- ASEGÚRATE DE QUE ESTA LÍNEA USE 'estado_id' ---
+                'estado_id' => $estadoRecibido->id, // <-- (y no 'documento_estado_id')
+                
+                'observaciones' => null,
+            ]
+        );
 
+            // 6. Si todo (pasos 3, 4 y 5) salió bien, confirmar los cambios
             DB::commit();
 
-            return back()->with('success', 'Documento adjuntado y/o actualizado exitosamente.');
+            return redirect()->back()->with('success', 'Documento subido exitosamente.');
         } catch (\Exception $e) {
-            DB::rollBack();
+            // 7. Si algo falló (el guardado del archivo o el guardado en BD)...
+            DB::rollBack(); // Deshacer cualquier cambio en la base de datos
+
+            // 8. (Limpieza) Si el archivo nuevo SÍ se alcanzó a guardar
+            //    pero la base de datos falló, borramos el archivo huérfano.
+            if ($newPath && $disk->exists($newPath)) {
+                $disk->delete($newPath);
+            }
+
+            // 9. Devolver el error al usuario
             return back()->withErrors(['error' => 'No se pudo subir el archivo: ' . $e->getMessage()]);
         }
     }
@@ -319,6 +336,17 @@ class TramiteController extends Controller
         ]);
 
         $estadoNuevo = TramiteEstado::find($request->estado_id);
+
+        if ($tramite->tramite_tipo_id == 1 && $estadoNuevo->nombre == 'APROBADO') {
+
+            // Si el trámite es una aprobación de plano y se está aprobando,
+            // actualizamos el predio principal.
+            $predio = $tramite->predio;
+            if ($predio) {
+                $predio->plano_aprobado = true;
+                $predio->save();
+            }
+        }
 
         $tramite->estado_id = $estadoNuevo->id;
         $tramite->fecha_inspeccion = $request->fecha_inspeccion;
@@ -363,32 +391,54 @@ class TramiteController extends Controller
         return back()->with('success', 'El estado del documento ha sido actualizado.');
     }
 
-    // --- INICIO: NUEVO MÉTODO PARA GENERAR EL PDF ---
     public function generarCertificacionTecnica(Tramite $tramite)
     {
-        // 1. Validar que el trámite sea el correcto (Aprobación de Plano de Lote)
-        // Puedes hacer esta lógica más robusta si lo necesitas
-        if ($tramite->tramite_tipo_id != 7) { // Asumiendo que el ID 1 es "Aprobación de Plano..."
-            return redirect()->back()->withErrors('Este tipo de trámite no tiene una certificación técnica de este tipo.');
-        }
-
-        // 2. Cargar las relaciones necesarias para tener todos los datos
-        $tramite->load(['solicitante', 'predio.via']);
-
-        // 3. Crear un array de meses en español para la fecha
+        $tramite->load(['solicitante', 'predio.via', 'predio.propietarios']);
         $meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
         $fecha_actual = [
             'mes' => $meses[now()->month - 1],
             'ano' => now()->year
         ];
 
-        // 4. Cargar la vista del PDF, pasarle los datos y configurar el tamaño
-        $pdf = Pdf::loadView('admin.tramites.certificaciones.aprobacion_plano', compact('tramite', 'fecha_actual'));
+        // --- Decidir qué plantilla y nombre de archivo usar ---
+        $viewName = ''; // Variable para guardar el nombre de la vista
+        $fileName = "certificado-{$tramite->predio->codigo_catastral}.pdf"; // Nombre base
+
+        // Usamos un switch para seleccionar la vista correcta
+        switch ($tramite->tramite_tipo_id) {
+
+            case 1: // ID 1 = Aprobación de Plano
+                $viewName = 'admin.tramites.certificaciones.aprobacion_plano';
+                $fileName = "certificacion-aprobacion-{$tramite->predio->codigo_catastral}.pdf";
+                break;
+
+            case 2: //  ID 2 = División de Lotes
+                $viewName = 'admin.tramites.certificaciones.division_lotes'; // Debes crear este archivo
+                $fileName = "certificacion-division-{$tramite->predio->codigo_catastral}.pdf";
+                break;
+
+            case 3: //  ID 3 = Fusión de Lotes
+                $viewName = 'admin.tramites.certificaciones.fusion_lotes'; // Debes crear este archivo
+                $fileName = "certificacion-fusion-{$tramite->predio->codigo_catastral}.pdf";
+                break;
+
+            case 5: //  ID 5 = Línea y Nivel
+                $viewName = 'admin.tramites.certificaciones.linea_nivel'; // Debes crear este archivo
+                $fileName = "certificacion-linea-nivel-{$tramite->predio->codigo_catastral}.pdf";
+                break;
+            case 8: //  ID 8 = "Certificación Técnica Varia"
+                // Este tipo de trámite necesita un formulario previo.
+                return redirect()->route('admin.tramites.certificacionVariaForm', $tramite);
+   
+            default:
+                // Si el tipo de trámite no tiene un certificado definido, regresa con un error.
+                return redirect()->back()->withErrors('Este tipo de trámite no tiene una certificación generable.');
+        }
+
+        $pdf = Pdf::loadView($viewName, compact('tramite', 'fecha_actual'));
         $pdf->setPaper('letter'); // Tamaño carta
 
-        // 5. Generar un nombre de archivo dinámico y descargar el PDF
-        $fileName = "certificacion-tecnica-{$tramite->predio->codigo_catastral}.pdf";
-        return $pdf->stream($fileName); // .stream() lo muestra en el navegador, .download() lo descarga directamente
+        return $pdf->stream($fileName);
     }
 
     /**
@@ -420,5 +470,95 @@ class TramiteController extends Controller
         $tramite = Tramite::withTrashed()->findOrFail($id);
         $tramite->restore();
         return redirect()->route('admin.tramites.index')->with('success', 'Trámite reactivado exitosamente.');
+    }
+
+    public function verDocumento($documentoId)
+    {
+        $documento = TramiteDocumento::findOrFail($documentoId);
+
+        // Opcional: Autorizar si el usuario puede ver este documento
+        // $this->authorize('view', $documento->tramite); 
+
+        $path = $documento->ruta_archivo;
+        $disk = Storage::disk('documentos_locales');
+
+        // Verificar si el archivo existe en nuestro disco
+        if (!$disk->exists($path)) {
+            abort(404, 'Archivo no encontrado.');
+        }
+
+        // Obtener el tipo de archivo (ej. 'application/pdf', 'image/jpeg')
+        $mimeType = $disk->mimeType($path);
+
+        // Devolver el archivo al navegador
+        // "response()" permite al navegador mostrar el PDF o la imagen
+        // en lugar de forzar la descarga.
+        return $disk->response($path, $documento->nombre_original, [
+            'Content-Type' => $mimeType,
+            'Content-Disposition' => 'inline; filename="' . $documento->nombre_original . '"',
+        ]);
+    }
+
+    // --- FUNCIÓN: MOSTRAR EL FORMULARIO ---
+    public function showCertificacionVariaForm(Tramite $tramite)
+    {
+        // Verificamos que el trámite esté aprobado para poder generar el certificado
+        if (strtoupper($tramite->estado->nombre) !== 'APROBADO' && strtoupper($tramite->estado->nombre) !== 'ENTREGADO') {
+            return redirect()->route('admin.tramites.show', $tramite)->withErrors('El trámite debe estar APROBADO para generar esta certificación.');
+        }
+        
+        // Simplemente devolvemos la nueva vista de formulario
+        return view('admin.tramites.certificaciones.certificacion_varia_form', compact('tramite'));
+    }
+
+    // --- FUNCIÓN: GENERAR EL PDF CON DATOS MANUALES ---
+    public function generateCertificacionVaria(Request $request, Tramite $tramite)
+    {
+        // 1. Validar los datos que el usuario escribió en el formulario
+        $validated = $request->validate([
+            'titulo_certificado' => 'required|string|max:255',
+            'parrafo_uno' => 'required|string|max:1000',
+            'parrafo_dos_negrita' => 'required|string|max:500',
+        ]);
+
+        // 2. Cargar los datos del trámite
+        $tramite->load(['solicitante', 'predio']);
+        $meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+        $fecha_actual = [
+            'dia' => now()->day, // Añadimos el día
+            'mes' => $meses[now()->month - 1],
+            'ano' => now()->year
+        ];
+
+        // 3. Lógica para el contador (Requisito 2)
+        $estadoAprobado = \App\Models\TramiteEstado::where('nombre', 'APROBADO')->first();
+        
+        // Contamos cuántos trámites de este TIPO (ID 5) fueron APROBADOS este AÑO
+        $count = Tramite::where('tramite_tipo_id', $tramite->tramite_tipo_id) // ej. 5
+                        ->where('estado_id', $estadoAprobado->id)
+                        ->whereYear('updated_at', now()->year)
+                        ->count();
+
+        // Asignamos el número actual (si es el primero del año, será 1)
+        // Usamos str_pad para rellenar con ceros hasta 6 dígitos (ej. 000001)
+        $numero_certificado = str_pad($count, 6, "0", STR_PAD_LEFT);
+        $codigo_certificado = "GAM-AYOAYO - $numero_certificado/" . $fecha_actual['ano'];
+
+        // 4. Preparar todos los datos para la vista del PDF
+        $data = [
+            'tramite' => $tramite,
+            'fecha_actual' => $fecha_actual,
+            'codigo_certificado' => $codigo_certificado,
+            'input_titulo' => $validated['titulo_certificado'],
+            'input_parrafo_1' => $validated['parrafo_uno'],
+            'input_parrafo_2_negrita' => $validated['parrafo_dos_negrita'],
+        ];
+
+        // 5. Generar el PDF
+        $pdf = Pdf::loadView('admin.tramites.certificaciones.certificacion_varia_template', $data);
+        $pdf->setPaper('letter');
+        $fileName = "certificacion-{$tramite->hoja_ruta}.pdf";
+        
+        return $pdf->stream($fileName);
     }
 }

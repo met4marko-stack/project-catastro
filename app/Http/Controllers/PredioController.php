@@ -9,6 +9,8 @@ use App\Models\Propietario;
 use App\Models\Persona;
 use App\Models\Via;
 use App\Models\MaterialVia;
+use App\Models\Provincia; 
+use App\Models\CentroPoblado;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -29,7 +31,7 @@ class PredioController extends Controller
             $userAuth = Auth::user();
 
             // Consulta base con relaciones necesarias
-            $query = Predio::with(['municipio', 'planimetria', 'propietarios.persona']);
+            $query = Predio::with(['municipio', 'planimetria', 'propietarios.persona', 'provincia', 'centroPoblado']);
 
             // Filtrar por municipio para Admin-Municipal
             if ($userAuth->hasRole('Admin-Municipal')) {
@@ -76,7 +78,10 @@ class PredioController extends Controller
         $vias = Via::all(); // O filtrar por municipio si es necesario
         $materialesVias = MaterialVia::all();
 
-        return view('admin.predios.create', compact('predio', 'municipios', 'planimetrias', 'propietarios', 'prediosPadre', 'vias', 'materialesVias'));
+        $provincias = Provincia::all();
+        $centrosPoblados = CentroPoblado::all();
+
+        return view('admin.predios.create', compact('predio', 'municipios', 'planimetrias', 'propietarios', 'prediosPadre', 'vias', 'materialesVias', 'provincias', 'centrosPoblados'));
     }
 
     public function store(Request $request)
@@ -93,8 +98,8 @@ class PredioController extends Controller
             // Ubicación
             'manzano' => 'nullable|string|max:20',
             'lote' => 'nullable|string|max:20',
-            'provincia' => 'nullable|string|max:255',
-            'centro_poblado' => 'nullable|string|max:255',
+            'provincia_id' => 'nullable|integer|exists:provincias,id', 
+            'centro_poblado_id' => 'nullable|integer|exists:centro_poblados,id',
             'zona' => 'nullable|string|max:255',
 
             // Superficies y Medidas
@@ -146,7 +151,6 @@ class PredioController extends Controller
 
             $data['municipio_id'] = Auth::user()->hasRole('Admin-Municipal') ? Auth::user()->municipio_id : $request->municipio_id;
 
-            // Convertir checkboxes a booleanos
             $data['propiedad_horizontal'] = $request->has('propiedad_horizontal');
             $data['agua_potable'] = $request->has('agua_potable');
             $data['energia_electrica'] = $request->has('energia_electrica');
@@ -158,7 +162,6 @@ class PredioController extends Controller
                 $data['forma_lote'] = ($request->input('forma_lote') === 'Regular');
             }
 
-            // 2. Maneja las cargas de archivos de fotografías
             if ($request->hasFile('fotografias')) {
                 $photoFields = ['fotografia_uno', 'fotografia_dos', 'fotografia_tres', 'fotografia_cuatro', 'fotografia_cinco'];
                 foreach ($request->file('fotografias') as $key => $file) {
@@ -169,7 +172,6 @@ class PredioController extends Controller
                 }
             }
 
-            // CAMBIO: Creación de objeto geoespacial
             if ($request->filled('coordenadas_text')) {
                 $points = [];
                 $coordenadasArray = json_decode($request->input('coordenadas_text'), true);
@@ -190,11 +192,7 @@ class PredioController extends Controller
                     $data['coordenadas'] = new MultiPolygon([$polygon], 32719);
                 }
             }
-
-            // 4. Crea el predio
             $predio = Predio::create($data);
-
-            // 5. Asocia los propietarios en la tabla pivote
             if ($request->has('propietarios')) {
                 $predio->propietarios()->attach($request->propietarios, [
                     'estado' => 'Propietario Actual',
@@ -203,7 +201,6 @@ class PredioController extends Controller
                     'updated_at' => now(),
                 ]);
             }
-
             DB::commit();
             return redirect()->route('admin.predios.index')->with('success', 'Predio registrado exitosamente.');
         } catch (\Exception $e) {
@@ -235,7 +232,10 @@ class PredioController extends Controller
         $vias = Via::all();
         $materialesVias = MaterialVia::all();
 
-        return view('admin.predios.edit', compact('predio', 'municipios', 'planimetrias', 'propietarios', 'prediosPadre', 'vias', 'materialesVias'));
+        $provincias = Provincia::all();
+        $centrosPoblados = CentroPoblado::all();
+
+        return view('admin.predios.edit', compact('predio', 'municipios', 'planimetrias', 'propietarios', 'prediosPadre', 'vias', 'materialesVias', 'provincias', 'centrosPoblados'));
     }
 
     public function update(Request $request, Predio $predio)
@@ -254,8 +254,8 @@ class PredioController extends Controller
             // Ubicación
             'manzano' => 'nullable|string|max:20',
             'lote' => 'nullable|string|max:20',
-            'provincia' => 'nullable|string|max:255',
-            'centro_poblado' => 'nullable|string|max:255',
+            'provincia_id' => 'nullable|integer|exists:provincias,id', 
+            'centro_poblado_id' => 'nullable|integer|exists:centro_poblados,id',
             'zona' => 'nullable|string|max:255',
 
             // Superficies y Medidas
@@ -525,11 +525,7 @@ PROMPT;
     public function buscar(Request $request)
     {
         $request->validate(['codigo_catastral' => 'required|string|max:255']);
-
         $codigo = $request->input('codigo_catastral');
-
-        // CAMBIO: Se elimina ST_Envelope para obtener la geometría real del predio.
-        // Lo nombramos 'geom_geojson' para mayor claridad.
         $resultado = DB::table('predios')
             ->where('codigo_catastral', $codigo)
             ->whereNull('deleted_at')
@@ -539,6 +535,7 @@ PROMPT;
         if (!$resultado || !$resultado->geom_geojson) {
             return response()->json(['error' => 'Código Catastral no encontrado.'], 404);
         }
+        // Devolver la geometría en formato JSON para que Leaflet la pueda interpretar
         return response()->json(['geometry' => json_decode($resultado->geom_geojson)]);
     }
 
