@@ -9,13 +9,15 @@ use App\Models\Tramite;
 use App\Models\TramiteTipo;
 use App\Models\TramiteEstado;
 use App\Models\Persona;
+use App\Models\Propietario;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Yajra\DataTables\Facades\DataTables;
 use App\Models\DocumentoEstado;
 use App\Models\TramiteDocumento;
-use Illuminate\Support\Facades\Storage; // para el almacenamiento de los archivos
+use Illuminate\Support\Facades\Storage; 
+use Carbon\Carbon;
 use Illuminate\Support\Str;
 use App\Models\Requisito;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -292,18 +294,18 @@ class TramiteController extends Controller
             // 5. Guardar la nueva ruta en la BASE DE DATOS.
             //    Esta operación también puede fallar (ej. constraint de BD)
             TramiteDocumento::updateOrCreate(
-            ['tramite_id' => $tramite->id, 'requisito_id' => $request->requisito_id],
-            [
-                'ruta_archivo' => $newPath,
-                'nombre_original' => $file->getClientOriginalName(),
-                'user_id' => Auth::id(), 
-                
-                // --- ASEGÚRATE DE QUE ESTA LÍNEA USE 'estado_id' ---
-                'estado_id' => $estadoRecibido->id, // <-- (y no 'documento_estado_id')
-                
-                'observaciones' => null,
-            ]
-        );
+                ['tramite_id' => $tramite->id, 'requisito_id' => $request->requisito_id],
+                [
+                    'ruta_archivo' => $newPath,
+                    'nombre_original' => $file->getClientOriginalName(),
+                    'user_id' => Auth::id(),
+
+                    // --- ASEGÚRATE DE QUE ESTA LÍNEA USE 'estado_id' ---
+                    'estado_id' => $estadoRecibido->id, // <-- (y no 'documento_estado_id')
+
+                    'observaciones' => null,
+                ]
+            );
 
             // 6. Si todo (pasos 3, 4 y 5) salió bien, confirmar los cambios
             DB::commit();
@@ -412,24 +414,21 @@ class TramiteController extends Controller
                 $fileName = "certificacion-aprobacion-{$tramite->predio->codigo_catastral}.pdf";
                 break;
 
-            case 2: //  ID 2 = División de Lotes
-                $viewName = 'admin.tramites.certificaciones.division_lotes'; // Debes crear este archivo
-                $fileName = "certificacion-division-{$tramite->predio->codigo_catastral}.pdf";
+            case 2: // ID 2 = División de Lotes
+                return redirect()->route('admin.tramites.divisionForm', $tramite);
                 break;
 
             case 3: //  ID 3 = Fusión de Lotes
-                $viewName = 'admin.tramites.certificaciones.fusion_lotes'; // Debes crear este archivo
+                $viewName = 'admin.tramites.certificaciones.fusion_lotes'; 
                 $fileName = "certificacion-fusion-{$tramite->predio->codigo_catastral}.pdf";
                 break;
 
             case 5: //  ID 5 = Línea y Nivel
-                $viewName = 'admin.tramites.certificaciones.linea_nivel'; // Debes crear este archivo
-                $fileName = "certificacion-linea-nivel-{$tramite->predio->codigo_catastral}.pdf";
-                break;
+                return redirect()->route('admin.tramites.lineaNivelForm', $tramite);                
             case 8: //  ID 8 = "Certificación Técnica Varia"
                 // Este tipo de trámite necesita un formulario previo.
                 return redirect()->route('admin.tramites.certificacionVariaForm', $tramite);
-   
+
             default:
                 // Si el tipo de trámite no tiene un certificado definido, regresa con un error.
                 return redirect()->back()->withErrors('Este tipo de trámite no tiene una certificación generable.');
@@ -506,7 +505,7 @@ class TramiteController extends Controller
         if (strtoupper($tramite->estado->nombre) !== 'APROBADO' && strtoupper($tramite->estado->nombre) !== 'ENTREGADO') {
             return redirect()->route('admin.tramites.show', $tramite)->withErrors('El trámite debe estar APROBADO para generar esta certificación.');
         }
-        
+
         // Simplemente devolvemos la nueva vista de formulario
         return view('admin.tramites.certificaciones.certificacion_varia_form', compact('tramite'));
     }
@@ -532,12 +531,12 @@ class TramiteController extends Controller
 
         // 3. Lógica para el contador (Requisito 2)
         $estadoAprobado = \App\Models\TramiteEstado::where('nombre', 'APROBADO')->first();
-        
+
         // Contamos cuántos trámites de este TIPO (ID 5) fueron APROBADOS este AÑO
         $count = Tramite::where('tramite_tipo_id', $tramite->tramite_tipo_id) // ej. 5
-                        ->where('estado_id', $estadoAprobado->id)
-                        ->whereYear('updated_at', now()->year)
-                        ->count();
+            ->where('estado_id', $estadoAprobado->id)
+            ->whereYear('updated_at', now()->year)
+            ->count();
 
         // Asignamos el número actual (si es el primero del año, será 1)
         // Usamos str_pad para rellenar con ceros hasta 6 dígitos (ej. 000001)
@@ -558,6 +557,172 @@ class TramiteController extends Controller
         $pdf = Pdf::loadView('admin.tramites.certificaciones.certificacion_varia_template', $data);
         $pdf->setPaper('letter');
         $fileName = "certificacion-{$tramite->hoja_ruta}.pdf";
+
+        return $pdf->stream($fileName);
+    }
+
+    /**
+     * Muestra el formulario para los datos manuales de Línea y Nivel.
+     */
+    public function showLineaNivelForm(Tramite $tramite)
+    {
+        // Verificamos que el trámite esté aprobado para poder generar el certificado
+        if (strtoupper($tramite->estado->nombre) !== 'APROBADO' && strtoupper($tramite->estado->nombre) !== 'ENTREGADO') {
+            return redirect()->route('admin.tramites.show', $tramite)->withErrors('El trámite debe estar APROBADO para generar esta certificación.');
+        }
+
+        $tramite->load('solicitante', 'predio');
+        
+        // Texto predeterminado para el párrafo 2
+        $defaultParrafoDos = "Que el solicitante acredita su interés legal presentando en calidad de prueba: Testimonio Nº... de fecha...; el citado predio se encuentra registrado en DDRR. Bajo la matricula Nº... (Fotocopia simple y vigente); Plano de Lote Aprobado en Original y Fotocopia; Boleta de pago de Impuestos, etc.";
+
+        return view('admin.tramites.certificaciones.linea-nivel-form', compact('tramite', 'defaultParrafoDos'));
+    }
+
+    /**
+     * Genera el PDF final de Línea y Nivel.
+     */
+    public function generateLineaNivel(Request $request, Tramite $tramite)
+    {
+        $request->validate(['parrafo_dos' => 'required|string']);
+
+        // Cargar todas las relaciones necesarias para el PDF
+        $tramite->load(
+            'solicitante',
+            'predio.propietarios.persona', // Carga todos los propietarios
+            'predio.planimetria',
+            'predio.provincia',
+            'predio.via'
+        );
+
+        $datos = [
+            'tramite' => $tramite,
+            'predio' => $tramite->predio,
+            'propietarios' => $tramite->predio->propietarios,
+            'parrafo_dos' => $request->parrafo_dos,
+            'distrito' => '01', // Valor estático
+            'centroPoblado' => 'TOLAR', // Valor estático
+            'fecha_actual' => $this->getFechaActual(),
+            'img_escudo' => $this->getImageAsBase64(public_path('img/escudo_bolivia.png')),
+            'img_logo' => $this->getImageAsBase64(public_path('img/logo_catastro_ayoayo.png')),
+        ];
+
+        // Cargar la vista del PDF
+        $pdf = app('dompdf.wrapper');
+        $pdf->loadView('admin.tramites.certificaciones.linea-nivel-pdf', $datos);
+        
+        // Opcional: configurar el papel
+        $pdf->setPaper('letter', 'portrait');
+
+        // Generar un nombre de archivo
+        $fileName = 'Cert_Linea_Nivel_' . $tramite->id . '.pdf';
+        
+        // Mostrar el PDF en el navegador
+        return $pdf->stream($fileName);
+    }
+    
+    // ... [tus funciones de updateStatus, certificacionVariaForm, etc.] ...
+
+    // --- FUNCIONES HELPER ---
+
+    /**
+     * Obtiene la fecha actual en formato español.
+     */
+    private function getFechaActual()
+    {
+        Carbon::setLocale('es');
+        $fecha = Carbon::now();
+        return [
+            'dia' => $fecha->day,
+            'mes' => $fecha->monthName,
+            'ano' => $fecha->year,
+        ];
+    }
+
+    /**
+     * Convierte una imagen a Base64 para el PDF.
+     */
+    private function getImageAsBase64($path)
+    {
+        if (!file_exists($path)) {
+            return null; // O una imagen placeholder en base64
+        }
+        $type = pathinfo($path, PATHINFO_EXTENSION);
+        $data = file_get_contents($path);
+        return 'data:image/' . $type . ';base64,' . base64_encode($data);
+    }
+
+    /**
+     * Muestra el formulario para los datos manuales de División/Fusión.
+     */
+    public function showDivisionForm(Tramite $tramite)
+    {
+        // Validar que el trámite esté aprobado
+        if (strtoupper($tramite->estado->nombre) !== 'APROBADO' && strtoupper($tramite->estado->nombre) !== 'ENTREGADO') {
+            return redirect()->route('admin.tramites.show', $tramite)->withErrors('El trámite debe estar APROBADO para generar esta certificación.');
+        }
+
+        $tramite->load('predio.propietarios.persona');
+        
+        // Obtenemos todos los propietarios para los selectores
+        $propietarios_lista = Propietario::with('persona')->where('estado', true)->get();
+
+        return view('admin.tramites.certificaciones.division-form', compact('tramite', 'propietarios_lista'));
+    }
+
+    /**
+     * Genera el PDF final de División y Partición.
+     */
+    public function generateDivisionPdf(Request $request, Tramite $tramite)
+    {
+        $request->validate([
+            'testimonio_numero' => 'required|string|max:100',
+            'testimonio_fecha' => 'required|date',
+            'superficie_total' => 'required|numeric|min:0',
+            'incisos' => 'required|array|min:2', // Debe tener al menos 2 lotes resultantes
+            'incisos.*.manzano' => 'required|string|max:100',
+            'incisos.*.lote' => 'required|string|max:100',
+            'incisos.*.superficie' => 'required|numeric|min:0',
+            'incisos.*.propietario_id' => 'required|integer|exists:propietarios,id',
+            'incisos.*.lote_nuevo' => 'required|string|max:100',
+            'incisos.*.superficie_legal_porcentaje' => 'required|numeric|min:0|max:100',
+            'incisos.*.superficie_util_porcentaje' => 'required|numeric|min:0|max:100',
+            'incisos.*.col_norte' => 'required|string',
+            'incisos.*.col_sur' => 'required|string',
+            'incisos.*.col_este' => 'required|string',
+            'incisos.*.col_oeste' => 'required|string',
+        ]);
+
+        // Cargar relaciones
+        $tramite->load('predio.propietarios.persona', 'predio.via', 'predio.provincia');
+
+        // Procesar los incisos para obtener los nombres de los propietarios
+        $incisosData = [];
+        foreach ($request->incisos as $inciso) {
+            $propietario = Propietario::with('persona')->find($inciso['propietario_id']);
+            $inciso['propietario_nombre'] = $propietario->persona->nombre_completo;
+            $inciso['propietario_ci'] = $propietario->persona->carnet . ' ' . $propietario->persona->expedido;
+            $incisosData[] = $inciso;
+        }
+
+        $datos = [
+            'tramite' => $tramite,
+            'propietarios' => $tramite->predio->propietarios,
+            'predio' => $tramite->predio,
+            'testimonio_numero' => $request->testimonio_numero,
+            'testimonio_fecha_formato' => Carbon::parse($request->testimonio_fecha)->locale('es')->isoFormat('D \d\e MMMM \d\e\l Y'),
+            'superficie_total' => $request->superficie_total,
+            'incisos' => $incisosData, // El array de incisos con los datos del form
+            'fecha_actual_larga' => Carbon::now()->locale('es')->isoFormat('D \d\e MMMM \d\e\l Y'),
+            'img_escudo' => $this->getImageAsBase64(public_path('img/escudo_bolivia.png')),
+            'img_logo' => $this->getImageAsBase64(public_path('img/logo_catastro_ayoayo.png')),
+        ];
+
+        // Cargar la vista del PDF
+        $pdf = app('dompdf.wrapper');
+        $pdf->loadView('admin.tramites.certificaciones.pdf.division-pdf', $datos);
+        $pdf->setPaper('letter', 'portrait');
+        $fileName = 'Resolucion_Division_' . $tramite->id . '.pdf';
         
         return $pdf->stream($fileName);
     }

@@ -9,7 +9,7 @@ use App\Models\Propietario;
 use App\Models\Persona;
 use App\Models\Via;
 use App\Models\MaterialVia;
-use App\Models\Provincia; 
+use App\Models\Provincia;
 use App\Models\CentroPoblado;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -23,15 +23,20 @@ use Clickbar\Magellan\Data\Geometries\Point;
 use Clickbar\Magellan\Data\Geometries\LineString;
 
 
+
 class PredioController extends Controller
 {
     public function index(Request $request)
     {
         if ($request->ajax()) {
             $userAuth = Auth::user();
-
+            $status = $request->input('status', 'active'); // 'active' por defecto
             // Consulta base con relaciones necesarias
             $query = Predio::with(['municipio', 'planimetria', 'propietarios.persona', 'provincia', 'centroPoblado']);
+
+            if ($status == 'inactive') {
+                $query->onlyTrashed();
+            }
 
             // Filtrar por municipio para Admin-Municipal
             if ($userAuth->hasRole('Admin-Municipal')) {
@@ -50,22 +55,40 @@ class PredioController extends Controller
                     return $predio->planimetria->codigo ?? 'N/A';
                 })
                 ->addColumn('acciones', function (Predio $predio) {
+                    if ($predio->trashed()) {
+                        // Si está eliminado, muestra solo "Reactivar"
+                        $restoreUrl = route('admin.predios.restore', $predio->id);
+                        return '<form action="' . $restoreUrl . '" method="POST" class="d-inline form-restore">
+                                    ' . csrf_field() . '
+                                    <button type="submit" class="btn btn-sm btn-info" title="Reactivar"><i class="fas fa-undo"></i></button>
+                                </form>';
+                    }
                     $editUrl = route('admin.predios.edit', $predio);
                     $deleteUrl = route('admin.predios.destroy', $predio);
 
-                    // Genera el HTML para los botones de acción
                     return '<a href="' . $editUrl . '" class="btn btn-sm btn-warning" title="Editar"><i class="fas fa-edit"></i></a>
-                        <form action="' . $deleteUrl . '" method="POST" class="d-inline form-delete">
-                            ' . csrf_field() . '
-                            ' . method_field('DELETE') . '
-                            <button type="submit" class="btn btn-sm btn-danger" title="Desactivar"><i class="fas fa-trash"></i></button>
-                        </form>';
+                            <form action="' . $deleteUrl . '" method="POST" class="d-inline form-delete">
+                                ' . csrf_field() . '
+                                ' . method_field('DELETE') . '
+                                <button type="submit" class="btn btn-sm btn-danger" title="Desactivar"><i class="fas fa-trash"></i></button>
+                            </form>';
                 })
                 ->rawColumns(['propietarios', 'acciones']) // Indica que estas columnas contienen HTML
                 ->toJson();
         }
 
         return view('admin.predios.index');
+    }
+
+    /**
+     * Reactiva un predio desactivado (soft delete).
+     */
+    public function restore($id)
+    {
+        $predio = Predio::withTrashed()->findOrFail($id);
+        $predio->restore();
+
+        return redirect()->route('admin.predios.index')->with('success', 'Predio reactivado exitosamente.');
     }
 
     public function create()
@@ -98,7 +121,7 @@ class PredioController extends Controller
             // Ubicación
             'manzano' => 'nullable|string|max:20',
             'lote' => 'nullable|string|max:20',
-            'provincia_id' => 'nullable|integer|exists:provincias,id', 
+            'provincia_id' => 'nullable|integer|exists:provincias,id',
             'centro_poblado_id' => 'nullable|integer|exists:centro_poblados,id',
             'zona' => 'nullable|string|max:255',
 
@@ -254,7 +277,7 @@ class PredioController extends Controller
             // Ubicación
             'manzano' => 'nullable|string|max:20',
             'lote' => 'nullable|string|max:20',
-            'provincia_id' => 'nullable|integer|exists:provincias,id', 
+            'provincia_id' => 'nullable|integer|exists:provincias,id',
             'centro_poblado_id' => 'nullable|integer|exists:centro_poblados,id',
             'zona' => 'nullable|string|max:255',
 
@@ -548,7 +571,7 @@ PROMPT;
             $query->where('propietarios.estado', true)->with('persona');
         }]);
 
-        $propietariosData = $predio->propietarios->map(function($propietario) {
+        $propietariosData = $predio->propietarios->map(function ($propietario) {
             if ($propietario->persona) {
                 return [
                     'id' => $propietario->persona->id,
@@ -556,7 +579,7 @@ PROMPT;
                 ];
             }
             return null;
-        })->filter(); 
+        })->filter();
 
         return response()->json($propietariosData);
     }

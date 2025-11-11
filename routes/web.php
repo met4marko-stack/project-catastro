@@ -99,6 +99,10 @@ Route::middleware(['auth', 'nocache'])->group(function () {
             ->name('predios.buscar')
             ->middleware('role:Admin-Municipal');
         Route::get('predios/{predio}/get-propietarios', [App\Http\Controllers\PredioController::class, 'getPropietariosAjax'])->name('predios.getPropietariosAjax');
+        Route::post('predios/{id}/restore', [App\Http\Controllers\PredioController::class, 'restore'])
+             ->name('predios.restore')
+             ->middleware('role:Admin-Municipal');
+        
         Route::resource('predios', App\Http\Controllers\PredioController::class)
             ->middleware('role:Admin-Municipal');
 
@@ -122,6 +126,14 @@ Route::middleware(['auth', 'nocache'])->group(function () {
             Route::get('tramites/{tramite}/certificacion-varia-form', [TramiteController::class, 'showCertificacionVariaForm'])->name('tramites.certificacionVariaForm');
             // Ruta para PROCESAR el formulario y generar el PDF final
             Route::post('tramites/{tramite}/generar-certificacion-varia', [TramiteController::class, 'generateCertificacionVaria'])->name('tramites.generateCertificacionVaria');
+            // Ruta para MOSTRAR el formulario de Línea y Nivel
+            Route::get('tramites/{tramite}/linea-nivel-form', [TramiteController::class, 'showLineaNivelForm'])->name('tramites.lineaNivelForm');
+            // Ruta para PROCESAR el formulario y generar el PDF final
+            Route::post('tramites/{tramite}/generar-linea-nivel', [TramiteController::class, 'generateLineaNivel'])->name('tramites.generateLineaNivel');
+            // Ruta para MOSTRAR el formulario de División/Fusión
+            Route::get('tramites/{tramite}/division-fusion-form', [TramiteController::class, 'showDivisionForm'])->name('tramites.divisionForm');
+            // Ruta para PROCESAR el formulario y generar el PDF final
+            Route::post('tramites/{tramite}/generar-division-fusion', [TramiteController::class, 'generateDivisionPdf'])->name('tramites.generateDivision');
 
             Route::post('tramites/{tramite}/restore', [TramiteController::class, 'restore'])->name('tramites.restore');
             Route::resource('tramites', TramiteController::class);

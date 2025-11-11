@@ -123,40 +123,100 @@
         <div class="col-md-4">
 
             {{-- =============================================================== --}}
-            {{-- ▼▼▼ Pega aquí el nuevo card de Análisis Predictivo ▼▼▼ --}}
+            {{--  CARD DE ANÁLISIS PREDICTIVO  --}}
             {{-- =============================================================== --}}
 
+            {{-- Usamos la variable $predictions que pasaste desde el controlador --}}
             @if (isset($predictions))
-                <div class="card card-purple">
+
+                {{-- El color del card se basa en la predicción --}}
+                <div class="card card-{{ $predictions['color_riesgo'] ?? 'secondary' }} card-outline">
                     <div class="card-header">
-                        <h3 class="card-title">Análisis Predictivo</h3>
+                        <h3 class="card-title">Análisis Predictivo (Modelo: {{ $predictions['modelo_riesgo'] ?? 'N/A' }})
+                        </h3>
                     </div>
                     <div class="card-body">
+
                         <strong><i class="fas fa-exclamation-triangle mr-1"></i> Nivel de Riesgo Estimado</strong>
-                        <p class="text-muted">
-                            @if ($predictions['riesgo_prediccion_label'] == 'Alto')
-                                <span class="badge badge-danger" style="font-size: 1em;">Alto</span>
-                                <small>({{ $predictions['riesgo_probabilidad'] }}% de probabilidad)</small>
-                            @else
-                                <span class="badge badge-success" style="font-size: 1em;">Bajo</span>
-                                <small>({{ 100 - $predictions['riesgo_probabilidad'] }}% de probabilidad)</small>
-                            @endif
-                        </p>
-                        <p class="text-muted small">Este trámite tiene características similares a otros que han sido
-                            observados o rechazados anteriormente.</p>
+
+                        {{-- Sección de Nivel de Riesgo y Probabilidades --}}
+                        <div class="d-flex justify-content-between align-items-center mb-2 mt-2">
+                            {{-- La etiqueta principal (Bajo, Medio, Alto) --}}
+                            <span class="badge badge-{{ $predictions['color_riesgo'] ?? 'secondary' }}"
+                                style="font-size: 1.2em;">
+                                {{ $predictions['nivel_riesgo'] ?? 'Indeterminado' }}
+                            </span>
+
+                            {{-- Las 3 probabilidades --}}
+                            <div class="text-right">
+                                <small class="text-danger d-block"><b>Alto:</b>
+                                    {{ $predictions['probabilidad_alto'] ?? '?' }}%</small>
+                                <small class="text-warning d-block"><b>Medio:</b>
+                                    {{ $predictions['probabilidad_medio'] ?? '?' }}%</small>
+                                <small class="text-success d-block"><b>Bajo:</b>
+                                    {{ $predictions['probabilidad_bajo'] ?? '?' }}%</small>
+                            </div>
+                        </div>
+
+                        {{-- Barra de Progreso de Probabilidades --}}
+                        <div class="progress" style="height: 10px;">
+                            <div class="progress-bar bg-danger" role="progressbar"
+                                style="width: {{ $predictions['probabilidad_alto'] ?? 0 }}%" title="Prob. Alto">
+                            </div>
+                            <div class="progress-bar bg-warning" role="progressbar"
+                                style="width: {{ $predictions['probabilidad_medio'] ?? 0 }}%" title="Prob. Medio">
+                            </div>
+                            <div class="progress-bar bg-success" role="progressbar"
+                                style="width: {{ $predictions['probabilidad_bajo'] ?? 0 }}%" title="Prob. Bajo">
+                            </div>
+                        </div>
+
                         <hr>
 
+                        {{-- Factores Identificados --}}
+                        <strong><i class="fas fa-search-plus mr-1"></i> Factores Clave Identificados</strong>
+                        @if (!empty($predictions['factores_identificados']))
+                            <ul class="list-unstyled text-muted small mt-2">
+                                @foreach ($predictions['factores_identificados'] as $factor)
+                                    <li><i
+                                            class="fas fa-check text-{{ $predictions['color_riesgo'] ?? 'secondary' }} mr-1"></i>
+                                        {{ $factor }}</li>
+                                @endforeach
+                            </ul>
+                        @else
+                            <p class="text-muted small mt-2">No se identificaron factores de riesgo significativos.</p>
+                        @endif
+
+                        <hr>
+
+                        {{-- Recomendaciones (Nueva Sección) --}}
+                        {{-- Esta parte requiere que también pases la variable $recomendaciones desde tu controlador --}}
+                        @if (isset($recomendaciones) && !empty($recomendaciones))
+                            <strong><i class="fas fa-tasks mr-1"></i> Recomendaciones del Sistema</strong>
+                            <ul class="list-unstyled text-muted small mt-2">
+                                @foreach ($recomendaciones as $rec)
+                                    <li><i class="fas fa-arrow-right text-primary mr-1"></i> {{ $rec }}</li>
+                                @endforeach
+                            </ul>
+                            <hr>
+                        @endif
+
+                        {{-- Estimación de Tiempo --}}
                         <strong><i class="far fa-clock mr-1"></i> Tiempo de Resolución Estimado</strong>
                         <p class="text-muted">
-                            Aproximadamente **{{ $predictions['dias_prediccion'] }} días**.
+                            Aproximadamente **{{ $predictions['dias_prediccion'] ?? '...' }} días**.
                         </p>
                     </div>
                 </div>
             @else
+                {{-- Fallback si el servicio de ML no está disponible --}}
                 <div class="alert alert-warning">
                     El servicio de predicción no está disponible en este momento.
                 </div>
             @endif
+            {{-- =============================================================== --}}
+            {{-- ▲▲▲ FIN: NUEVO CARD DE ANÁLISIS PREDICTIVO ▲▲▲ --}}
+            {{-- =============================================================== --}}
 
             {{-- Card para actualizar estado general del trámite --}}
             <div class="card card-secondary">
