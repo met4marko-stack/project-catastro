@@ -13,7 +13,7 @@
 
 @section('content')
 
-    {{-- Alerta para mostrar el código de acceso recién generado --}}
+    {{-- Alerta para mostrar el código de acceso generado --}}
     @if (session('codigo_generado'))
         <div class="alert alert-success alert-dismissible">
             <button type="button" class="close" data-dismiss="alert" aria-hidden="true">×</button>

@@ -275,24 +275,20 @@ class TramiteController extends Controller
 
         $newPath = null; // Variable para rastrear el archivo nuevo
 
-        DB::beginTransaction(); // <-- 1. Iniciar la transacción
+        DB::beginTransaction(); // Iniciar la transacción
 
         try {
-            // 2. Buscar el documento existente
+            // Buscar el documento existente
             $documentoExistente = TramiteDocumento::where('tramite_id', $tramite->id)
                 ->where('requisito_id', $request->requisito_id)->first();
 
-            // 3. Si existía un archivo anterior, borrarlo del disco
+            // Si existía un archivo anterior, borrarlo del disco
             if ($documentoExistente && $documentoExistente->ruta_archivo) {
                 $disk->delete($documentoExistente->ruta_archivo);
             }
 
-            // 4. Guardar el nuevo archivo FÍSICO en el disco.
-            //    Esta operación puede fallar (ej. permisos, disco lleno)
             $newPath = $file->storeAs($filePath, $fileName, 'documentos_locales');
 
-            // 5. Guardar la nueva ruta en la BASE DE DATOS.
-            //    Esta operación también puede fallar (ej. constraint de BD)
             TramiteDocumento::updateOrCreate(
                 ['tramite_id' => $tramite->id, 'requisito_id' => $request->requisito_id],
                 [
@@ -300,28 +296,24 @@ class TramiteController extends Controller
                     'nombre_original' => $file->getClientOriginalName(),
                     'user_id' => Auth::id(),
 
-                    // --- ASEGÚRATE DE QUE ESTA LÍNEA USE 'estado_id' ---
-                    'estado_id' => $estadoRecibido->id, // <-- (y no 'documento_estado_id')
+                    'estado_id' => $estadoRecibido->id, 
 
                     'observaciones' => null,
                 ]
             );
 
-            // 6. Si todo (pasos 3, 4 y 5) salió bien, confirmar los cambios
+            // confirmar los cambios
             DB::commit();
 
             return redirect()->back()->with('success', 'Documento subido exitosamente.');
         } catch (\Exception $e) {
-            // 7. Si algo falló (el guardado del archivo o el guardado en BD)...
+            // Si algo falló (el guardado del archivo o el guardado en BD)...
             DB::rollBack(); // Deshacer cualquier cambio en la base de datos
 
-            // 8. (Limpieza) Si el archivo nuevo SÍ se alcanzó a guardar
-            //    pero la base de datos falló, borramos el archivo huérfano.
             if ($newPath && $disk->exists($newPath)) {
                 $disk->delete($newPath);
             }
 
-            // 9. Devolver el error al usuario
             return back()->withErrors(['error' => 'No se pudo subir el archivo: ' . $e->getMessage()]);
         }
     }
