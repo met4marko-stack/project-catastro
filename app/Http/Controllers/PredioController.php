@@ -144,7 +144,7 @@ class PredioController extends Controller
             'gas_domiciliario' => 'nullable|boolean',
             'material_via' => 'nullable|string|max:255',
             'forma_lote' => 'nullable|string|in:Regular,Irregular',
-            'id_material_via' => 'nullable|integer|exists:materiales_vias,id', // Valida contra la tabla
+            'id_material_via' => 'nullable|integer|exists:materiales_via,id', // Valida contra la tabla
             'via_id' => 'nullable|integer|exists:vias,id', // Valida contra la tabla
 
             // Fotografías
@@ -301,7 +301,7 @@ class PredioController extends Controller
             'material_via' => 'nullable|string|max:255',
             'forma_lote' => 'nullable|string|in:Regular,Irregular',
             'material_via' => 'nullable|string|max:255',
-            'id_material_via' => 'nullable|integer|exists:materiales_vias,id', // Valida contra la tabla
+            'id_material_via' => 'nullable|integer|exists:materiales_via,id', // Valida contra la tabla
             'via_id' => 'nullable|integer|exists:vias,id', // Valida contra la tabla
 
 
@@ -549,17 +549,33 @@ PROMPT;
     {
         $request->validate(['codigo_catastral' => 'required|string|max:255']);
         $codigo = $request->input('codigo_catastral');
-        $resultado = DB::table('predios')
+        
+        $predio = Predio::with(['municipio', 'propietarios.persona'])
+            ->select(
+                'predios.*',
+                DB::raw('ST_AsGeoJSON(ST_Transform(coordenadas, 4326)) as geom_geojson')
+            )
             ->where('codigo_catastral', $codigo)
-            ->whereNull('deleted_at')
-            ->select(DB::raw('ST_AsGeoJSON(ST_Transform(coordenadas, 4326)) as geom_geojson'))
             ->first();
 
-        if (!$resultado || !$resultado->geom_geojson) {
+        if (!$predio || !$predio->geom_geojson) {
             return response()->json(['error' => 'Código Catastral no encontrado.'], 404);
         }
-        // Devolver la geometría en formato JSON para que Leaflet la pueda interpretar
-        return response()->json(['geometry' => json_decode($resultado->geom_geojson)]);
+
+        return response()->json([
+            'geometry' => json_decode($predio->geom_geojson),
+            'data' => [
+                'codigo_catastral' => $predio->codigo_catastral,
+                'propietarios' => $predio->propietarios->map(fn($p) => $p->persona->nombre_completo)->join(', '),
+                'municipio' => $predio->municipio->nombre ?? '',
+                'zona' => $predio->zona,
+                'manzano' => $predio->manzano,
+                'lote' => $predio->lote,
+                'sup_levantamiento' => $predio->sup_levantamiento,
+                'sup_testimonio' => $predio->sup_testimonio,
+                'sup_construida' => $predio->sup_construida,
+            ]
+        ]);
     }
 
     /**

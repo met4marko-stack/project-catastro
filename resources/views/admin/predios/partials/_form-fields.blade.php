@@ -61,7 +61,7 @@
                         <label>Provincia</label>
                         <select name="provincia_id" class="form-control select2">
                             <option value="">-- Seleccione una Provincia --</option>
-                            @foreach($provincias as $provincia)
+                            @foreach ($provincias as $provincia)
                                 <option value="{{ $provincia->id }}"
                                     {{ old('provincia_id', $predio->provincia_id ?? '') == $provincia->id ? 'selected' : '' }}>
                                     {{ $provincia->nombre }}
@@ -73,7 +73,7 @@
                         <label>Centro Poblado</label>
                         <select name="centro_poblado_id" class="form-control select2">
                             <option value="">-- Seleccione un Centro Poblado --</option>
-                            @foreach($centrosPoblados as $centro)
+                            @foreach ($centrosPoblados as $centro)
                                 <option value="{{ $centro->id }}"
                                     {{ old('centro_poblado_id', $predio->centro_poblado_id ?? '') == $centro->id ? 'selected' : '' }}>
                                     {{ $centro->nombre }}
@@ -156,11 +156,13 @@
                         <label>Forma del Lote</label>
                         <select name="forma_lote" class="form-control select2">
                             <option value="">-- Seleccione --</option>
-                            <option value="1"
-                                {{ old('forma_lote', $predio->forma_lote ?? '') == '1' ? 'selected' : '' }}>Regular
+                            <option value="Regular"
+                                {{ old('forma_lote', isset($predio) && $predio->forma_lote ? 'Regular' : '') == 'Regular' ? 'selected' : '' }}>
+                                Regular
                             </option>
-                            <option value="0"
-                                {{ old('forma_lote', $predio->forma_lote ?? '') == '0' ? 'selected' : '' }}>Irregular
+                            <option value="Irregular"
+                                {{ old('forma_lote', isset($predio) && !$predio->forma_lote && !is_null($predio->forma_lote) ? 'Irregular' : '') == 'Irregular' ? 'selected' : '' }}>
+                                Irregular
                             </option>
                         </select>
                     </div>

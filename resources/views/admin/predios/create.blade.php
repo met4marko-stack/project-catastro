@@ -13,6 +13,7 @@
 
 @section('content')
     {{-- Sección para la IA --}}
+    <!--
     <div class="card card-outline card-info">
         <div class="card-header">
             <h3 class="card-title">Opcional: Rellenar datos desde Plano Catastral</h3>
@@ -35,7 +36,7 @@
                 </div>
             </div>
         </div>
-    </div>
+    </div>-->
 
     <form action="{{ route('admin.predios.store') }}" method="POST" enctype="multipart/form-data">
         @csrf

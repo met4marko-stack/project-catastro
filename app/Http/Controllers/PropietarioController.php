@@ -53,11 +53,21 @@ class PropietarioController extends Controller
                 ->addColumn('nombre_completo', function ($row) {
                     return $row->nombre_completo ?? trim(($row->nombre ?? '') . ' ' . ($row->primer_apellido ?? '') . ' ' . ($row->segundo_apellido ?? ''));
                 })
+                ->filterColumn('nombre_completo', function($query, $keyword) {
+                    $sql = "CONCAT_WS(' ', personas.nombre, personas.primer_apellido, personas.segundo_apellido) ILIKE ?";
+                    $query->whereRaw($sql, ["%{$keyword}%"]);
+                })
                 ->addColumn('carnet', function ($row) {
                     return trim(($row->persona_carnet ?? '') . ' ' . ($row->persona_expedido ?? ''));
                 })
+                ->filterColumn('carnet', function($query, $keyword) {
+                    $query->where('personas.carnet', 'ILIKE', "%{$keyword}%");
+                })
                 ->addColumn('municipio', function ($row) {
                     return $row->municipio_nombre ?? '';
+                })
+                ->filterColumn('municipio', function($query, $keyword) {
+                    $query->where('municipios.nombre', 'ILIKE', "%{$keyword}%");
                 })
                 ->addColumn('estado', function ($row) {
                     return $row->estado

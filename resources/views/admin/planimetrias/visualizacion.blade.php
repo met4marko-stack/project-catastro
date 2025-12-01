@@ -26,6 +26,29 @@
             {{-- El contenedor del mapa --}}
             <div id="map" style="height: 600px; width: 100%;"></div>
         </div>
+        
+        {{-- Contenedor de Información del Predio (Inicialmente oculto) --}}
+        <div id="predio-info" class="card-footer bg-white" style="display: none;">
+            <h5 class="text-primary mb-3"><i class="fas fa-info-circle"></i> Detalles del Predio Encontrado</h5>
+            <div class="row">
+                <div class="col-md-3">
+                    <strong>Código Catastral:</strong>
+                    <p id="info-codigo" class="text-muted"></p>
+                </div>
+                <div class="col-md-4">
+                    <strong>Propietario(s):</strong>
+                    <p id="info-propietario" class="text-muted"></p>
+                </div>
+                <div class="col-md-3">
+                    <strong>Ubicación (Zona/Mz/Lote):</strong>
+                    <p id="info-ubicacion" class="text-muted"></p>
+                </div>
+                <div class="col-md-2">
+                    <strong>Sup. Levantamiento:</strong>
+                    <p id="info-superficie" class="text-muted"></p>
+                </div>
+            </div>
+        </div>
     </div>
 @stop
 
@@ -87,6 +110,7 @@
             ////////////////////////////////////////////////////////////
             const searchInput = document.getElementById('search-catastral-input');
             const searchBtn = document.getElementById('search-catastral-btn');
+            const infoContainer = document.getElementById('predio-info');
             let highlightLayer = null; // Variable para guardar la capa de resaltado
 
             const buscarPredio = () => {
@@ -96,42 +120,40 @@
                     return;
                 }
 
-                // Remover resaltado anterior
-                if (highlightLayer) {
-                    map.removeLayer(highlightLayer);
-                }
+                // Limpiar UI
+                if (highlightLayer) map.removeLayer(highlightLayer);
+                infoContainer.style.display = 'none';
 
                 fetch(`{{ route('admin.predios.buscar') }}?codigo_catastral=${codigoCatastral}`)
                     .then(response => {
-                        if (!response.ok) {
-                            throw new Error('Código no encontrado');
-                        }
+                        if (!response.ok) throw new Error('Código no encontrado');
                         return response.json();
                     })
-                    .then(data => {
-                        // Leaflet puede leer GeoJSON directamente
-                        const shapeLayer = L.geoJSON(data.geometry);
+                    .then(response => {
+                        const { geometry, data } = response;
 
-                        // Centrar el mapa en los límites del predio
-                        map.fitBounds(shapeLayer.getBounds(), {
-                            maxZoom: 19
-                        });
+                        // 1. Dibujar y centrar en el mapa
+                        const shapeLayer = L.geoJSON(geometry);
+                        map.fitBounds(shapeLayer.getBounds(), { maxZoom: 19 });
 
-                        // Resaltar el predio encontrado en el mapa
-                        highlightLayer = L.geoJSON(data.geometry, {
-                            style: {
-                                color: '#ff0000',
-                                weight: 3,
-                                fillOpacity: 0.3
-                            }
+                        highlightLayer = L.geoJSON(geometry, {
+                            style: { color: '#ff0000', weight: 3, fillOpacity: 0.3 }
                         }).addTo(map);
 
-                        // Opcional: Remover el resaltado después de unos segundos
+                        // 2. Mostrar datos del predio
+                        document.getElementById('info-codigo').textContent = data.codigo_catastral || 'S/D';
+                        document.getElementById('info-propietario').textContent = data.propietarios || 'Sin propietarios registrados';
+                        document.getElementById('info-ubicacion').textContent = 
+                            `${data.zona || ''} / Mz: ${data.manzano || '-'} / Lt: ${data.lote || '-'}`;
+                        document.getElementById('info-superficie').textContent = 
+                            (data.sup_levantamiento ? data.sup_levantamiento + ' m²' : 'S/D');
+                        
+                        infoContainer.style.display = 'block';
+
+                        // Opcional: Quitar resaltado después de un tiempo
                         setTimeout(() => {
-                            if (highlightLayer) {
-                                map.removeLayer(highlightLayer);
-                            }
-                        }, 5000); // 5 segundos
+                            if (highlightLayer) map.removeLayer(highlightLayer);
+                        }, 10000);
                     })
                     .catch(error => {
                         Swal.fire('Error', 'No se pudo encontrar el predio con ese código.', 'error');

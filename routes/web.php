@@ -29,7 +29,7 @@ Route::get('/consulta', [PublicConsultaController::class, 'index'])->name('publi
 Route::post('/consulta/buscar', [PublicConsultaController::class, 'buscar'])->name('public.consulta.buscar');
 
 Route::post('/ocr/procesar', [OcrAIController::class, 'procesarDocumento'])->name('ocr.procesar');
-
+//Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name('home');
 
 Auth::routes();
 
@@ -61,7 +61,6 @@ Route::middleware(['auth', 'nocache'])->group(function () {
         Route::resource('municipios', MunicipioController::class)
             ->middleware('role:Super-Admin');
 
-        // Ruta para Reactivar un usuario (Soft Delete)
         Route::post('usuarios/{usuario}/restore', [UsuarioController::class, 'restore'])
             ->name('usuarios.restore')
             ->middleware('role:Super-Admin|Admin-Municipal');

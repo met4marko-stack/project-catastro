@@ -4,20 +4,17 @@ namespace Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
 
-/**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Persona>
- */
 class PersonaFactory extends Factory
 {
-    /**
-     * Define the model's default state.
-     *
-     * @return array<string, mixed>
-     */
     public function definition(): array
     {
         return [
-            //
+            'nombre' => $this->faker->firstName(),
+            'primer_apellido' => $this->faker->lastName(),
+            'segundo_apellido' => $this->faker->lastName(),
+            'carnet' => $this->faker->unique()->numerify('#######'), // Genera un CI único
+            'expedido' => $this->faker->randomElement(['LP', 'CB', 'SC', 'OR', 'PT', 'TJ', 'BE', 'PD', 'CH']),
+            // Añade otros campos si tu tabla personas los requiere (ej. telefono, direccion)
         ];
     }
 }
