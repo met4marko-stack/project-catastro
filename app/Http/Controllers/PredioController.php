@@ -115,7 +115,7 @@ class PredioController extends Controller
             'propiedad_horizontal' => 'nullable|boolean',
             'numero_unidad' => 'nullable|string|max:20|required_with:inmueble_padre_id',
             'codigo_catastral' => 'required|string|max:255|unique:predios,codigo_catastral',
-            'numero_matricula_folio' => 'nullable|string|max:255',
+            'numero_matricula_folio' => 'required|string|max:255',
             'numero_plano' => 'nullable|string|max:50',
 
             // Ubicación
@@ -173,6 +173,10 @@ class PredioController extends Controller
             $data = $request->except(['propietarios', 'coordenadas_text', '_token', '_method', 'fotografia_uno', 'fotografia_dos', 'fotografia_tres', 'fotografia_cuatro', 'fotografia_cinco']);
 
             $data['municipio_id'] = Auth::user()->hasRole('Admin-Municipal') ? Auth::user()->municipio_id : $request->municipio_id;
+
+            // Formatear manzano y lote con ceros iniciales si es necesario
+            $data['manzano'] = $this->formatManzanoLote($request->input('manzano'));
+            $data['lote'] = $this->formatManzanoLote($request->input('lote'));
 
             $data['propiedad_horizontal'] = $request->has('propiedad_horizontal');
             $data['agua_potable'] = $request->has('agua_potable');
@@ -271,7 +275,7 @@ class PredioController extends Controller
             'numero_unidad' => 'nullable|string|max:20|required_with:inmueble_padre_id',
             // La regla 'unique' debe ignorar el registro actual al actualizar
             'codigo_catastral' => 'required|string|max:255|unique:predios,codigo_catastral,' . $predio->id,
-            'numero_matricula_folio' => 'nullable|string|max:255',
+            'numero_matricula_folio' => 'required|string|max:255',
             'numero_plano' => 'nullable|string|max:50',
 
             // Ubicación
@@ -330,6 +334,10 @@ class PredioController extends Controller
             // 1. Prepara los datos del predio
             $data = $request->except(['propietarios', 'coordenadas_text', '_token', '_method', 'fotografia_uno', 'fotografia_dos', 'fotografia_tres', 'fotografia_cuatro', 'fotografia_cinco']);
 
+            // Formatear manzano y lote con ceros iniciales si es necesario
+            $data['manzano'] = $this->formatManzanoLote($request->input('manzano'));
+            $data['lote'] = $this->formatManzanoLote($request->input('lote'));
+
             // Convertir checkboxes a booleanos
             $data['propiedad_horizontal'] = $request->has('propiedad_horizontal');
             $data['agua_potable'] = $request->has('agua_potable');
@@ -377,9 +385,17 @@ class PredioController extends Controller
 
             // 5. Sincroniza los propietarios en la tabla pivote
             if ($request->has('propietarios')) {
-                // sync() elimina las relaciones antiguas y añade las nuevas. Es ideal para un formulario de edición.
-                $predio->propietarios()->sync($request->propietarios);
-                // Nota: Si necesitas mantener el historial, la lógica aquí sería más compleja.
+                // sync() elimina las relaciones antiguas y añade las nuevas.
+                // Preparamos los datos pivote para asegurar consistencia
+                $syncData = [];
+                foreach ($request->propietarios as $propId) {
+                    $syncData[$propId] = [
+                        'estado' => 'Propietario Actual',
+                        'fecha_inicio' => now(), // Se asume que al editar se "renueva" o se corrige la asignación actual
+                        'updated_at' => now(),
+                    ];
+                }
+                $predio->propietarios()->sync($syncData);
             }
 
             DB::commit();
@@ -581,6 +597,40 @@ PROMPT;
     /**
      * Devuelve los propietarios de un predio específico en formato JSON.
      */
+    /**
+     * Devuelve el siguiente número de lote para un manzano dado.
+     */
+    public function getNextLoteNumber(Request $request)
+    {
+        $request->validate([
+            'manzano' => 'required|string|max:20',
+        ]);
+
+        $manzanoInput = $request->query('manzano');
+        // Asegurar que buscamos con el formato correcto (ej. '05' en vez de '5')
+        $manzano = $this->formatManzanoLote($manzanoInput);
+
+        $municipio_id = Auth::user()->municipio_id;
+
+        // Si es super-admin y manda municipio_id, usarlo (opcional)
+        if (Auth::user()->hasRole('Super-Admin') && $request->has('municipio_id')) {
+            $municipio_id = $request->query('municipio_id');
+        }
+
+        // Buscar predios en ese manzano y municipio
+        // Intentamos convertir 'lote' a número para sacar el máximo correctamente
+        // (Si 'lote' es alfanumérico puro, esto podría fallar o dar 0 en algunos DBs,
+        //  pero para números guardados como string suele funcionar con cast).
+        $maxLote = Predio::where('municipio_id', $municipio_id)
+            ->where('manzano', $manzano)
+            ->selectRaw('MAX(CAST(NULLIF(regexp_replace(lote, \'[^0-9]\', \'\', \'g\'), \'\') AS INTEGER)) as max_lote')
+            ->value('max_lote');
+
+        $nextLote = ($maxLote) ? $maxLote + 1 : 1;
+
+        return response()->json(['next_lote' => $nextLote]);
+    }
+
     public function getPropietariosAjax(Predio $predio)
     {
         $predio->load(['propietarios' => function ($query) {
@@ -598,5 +648,16 @@ PROMPT;
         })->filter();
 
         return response()->json($propietariosData);
+    }
+
+    /**
+     * Formatea un valor de manzano o lote para que tenga al menos 2 dígitos si es numérico y menor a 10.
+     */
+    private function formatManzanoLote(?string $value): ?string
+    {
+        if (is_numeric($value) && (int)$value >= 1 && (int)$value <= 9) {
+            return str_pad((int)$value, 2, '0', STR_PAD_LEFT);
+        }
+        return $value;
     }
 }

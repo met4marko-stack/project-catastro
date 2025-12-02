@@ -205,6 +205,69 @@
                     }
                 });
             });
+
+            // 5. Autocompletado de Lote al cambiar el Manzano
+            $('input[name="manzano"]').on('blur', function() {
+                var manzano = $(this).val();
+                if (manzano) {
+                    $.ajax({
+                        url: "{{ route('admin.predios.nextLote') }}",
+                        data: { manzano: manzano },
+                        success: function(response) {
+                            if (response.next_lote) {
+                                // Ponemos el número en el input de lote
+                                $('input[name="lote"]').val(response.next_lote);
+                                updateCodigoCatastral(); // Llama a la función para actualizar el código catastral
+                            }
+                        }
+                    });
+                }
+            });
+
+            // Función para actualizar el código catastral
+            function updateCodigoCatastral() {
+                let manzano = $('input[name="manzano"]').val();
+                let lote = $('input[name="lote"]').val();
+                const distrito = '01'; // Valor fijo
+
+                let formattedManzano = '';
+                // Si es numérico y entre 1-9, poner prefijo 0. Si es >=10 o alfanumérico, dejar tal cual.
+                // Nota: parseInt("05") es 5.
+                if (manzano && !isNaN(parseInt(manzano))) {
+                    let mInt = parseInt(manzano);
+                    if (mInt >= 1 && mInt <= 9) {
+                        formattedManzano = '0' + mInt;
+                    } else {
+                        formattedManzano = String(mInt);
+                    }
+                } else if (manzano) {
+                    formattedManzano = manzano;
+                }
+
+                let formattedLote = '';
+                if (lote && !isNaN(parseInt(lote))) {
+                    let lInt = parseInt(lote);
+                    if (lInt >= 1 && lInt <= 9) {
+                        formattedLote = '0' + lInt;
+                    } else {
+                        formattedLote = String(lInt);
+                    }
+                } else if (lote) {
+                    formattedLote = lote;
+                }
+                
+                if (formattedManzano && formattedLote) {
+                    let codigoCatastral = distrito + formattedManzano + formattedLote;
+                    $('input[name="codigo_catastral"]').val(codigoCatastral);
+                } else {
+                    $('input[name="codigo_catastral"]').val('');
+                }
+            }
+
+            // Escuchar cambios en manzano y lote para actualizar el código catastral
+            $('input[name="manzano"]').on('blur', updateCodigoCatastral);
+            $('input[name="lote"]').on('blur', updateCodigoCatastral);
+
         });
     </script>
 @stop

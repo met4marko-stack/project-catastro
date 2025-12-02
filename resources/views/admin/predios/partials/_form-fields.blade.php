@@ -35,6 +35,10 @@
                 <div class="row">
                     <div class="col-md-4 form-group"><label>N° de Plano</label><input type="text" name="numero_plano"
                             value="{{ old('numero_plano', $predio->numero_plano ?? '') }}" class="form-control"></div>
+                    <div class="col-md-4 form-group"><label>N° de Matrícula/Folio Real (*)</label><input type="text"
+                            name="numero_matricula_folio"
+                            value="{{ old('numero_matricula_folio', $predio->numero_matricula_folio ?? '') }}" class="form-control"
+                            required></div>
                     <div class="col-md-4 form-group"><label>Código Catastral (*)</label><input type="text"
                             name="codigo_catastral"
                             value="{{ old('codigo_catastral', $predio->codigo_catastral ?? '') }}" class="form-control"

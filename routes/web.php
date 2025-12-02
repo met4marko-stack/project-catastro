@@ -102,6 +102,11 @@ Route::middleware(['auth', 'nocache'])->group(function () {
              ->name('predios.restore')
              ->middleware('role:Admin-Municipal');
         
+        // Ruta para obtener el siguiente número de lote dado un manzano
+        Route::get('predios/next-lote', [App\Http\Controllers\PredioController::class, 'getNextLoteNumber'])
+            ->name('predios.nextLote')
+            ->middleware('role:Admin-Municipal');
+
         Route::resource('predios', App\Http\Controllers\PredioController::class)
             ->middleware('role:Admin-Municipal');
 
@@ -133,6 +138,14 @@ Route::middleware(['auth', 'nocache'])->group(function () {
             Route::get('tramites/{tramite}/division-fusion-form', [TramiteController::class, 'showDivisionForm'])->name('tramites.divisionForm');
             // Ruta para PROCESAR el formulario y generar el PDF final
             Route::post('tramites/{tramite}/generar-division-fusion', [TramiteController::class, 'generateDivisionPdf'])->name('tramites.generateDivision');
+
+            // --- RUTAS PARA FUSIÓN DE PREDIOS ---
+            Route::get('tramites/{tramite}/fusion-form', [TramiteController::class, 'showFusionForm'])->name('tramites.fusionForm');
+            Route::post('tramites/{tramite}/generar-fusion', [TramiteController::class, 'generateFusionPdf'])->name('tramites.generateFusion');
+
+            // --- RUTAS PARA EJECUTAR LA DIVISIÓN (CREACIÓN DE PREDIOS) ---
+            Route::get('tramites/{tramite}/division/ejecutar', [TramiteController::class, 'createDivision'])->name('tramites.division.execute');
+            Route::post('tramites/{tramite}/division/guardar', [TramiteController::class, 'storeDivision'])->name('tramites.division.store');
 
             Route::post('tramites/{tramite}/restore', [TramiteController::class, 'restore'])->name('tramites.restore');
             Route::resource('tramites', TramiteController::class);

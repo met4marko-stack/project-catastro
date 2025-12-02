@@ -289,6 +289,13 @@
                             class="btn btn-success btn-block">
                             <i class="fas fa-file-pdf"></i> <b>Generar Certificación Técnica</b>
                         </a>
+
+                        @if ($tramite->tramite_tipo_id == 2) {{-- ID 2 = División --}}
+                             {{-- <a href="{{ route('admin.tramites.division.execute', $tramite) }}" 
+                                class="btn btn-danger btn-block mt-2">
+                                <i class="fas fa-project-diagram"></i> <b>Ejecutar División</b>
+                            </a> --}}
+                        @endif
                     @endif
                 </div>
             </div>

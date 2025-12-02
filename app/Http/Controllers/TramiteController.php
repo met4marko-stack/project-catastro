@@ -10,6 +10,12 @@ use App\Models\TramiteTipo;
 use App\Models\TramiteEstado;
 use App\Models\Persona;
 use App\Models\Propietario;
+use App\Models\Municipio;
+use App\Models\Planimetria;
+use App\Models\Via;
+use App\Models\MaterialVia;
+use App\Models\Provincia;
+use App\Models\CentroPoblado;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +28,10 @@ use Illuminate\Support\Str;
 use App\Models\Requisito;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Clickbar\Magellan\Data\Geometries\MultiPolygon;
+use Clickbar\Magellan\Data\Geometries\Polygon;
+use Clickbar\Magellan\Data\Geometries\Point;
+use Clickbar\Magellan\Data\Geometries\LineString;
 
 
 class TramiteController extends Controller
@@ -180,7 +190,19 @@ class TramiteController extends Controller
     public function show(Tramite $tramite, PredictionService $predictionService)
     {
         // Cargar todas las relaciones necesarias para la vista de detalles
-        $tramite->load(['predio.propietarios.persona', 'solicitante', 'tipo.requisitos', 'estado', 'documentos.requisito', 'documentos.estado']);
+        // MODIFICACIÓN: Usamos un closure para incluir 'withTrashed' en la relación predio
+        $tramite->load([
+            'predio' => function ($query) {
+                $query->withTrashed();
+            },
+            'predio.propietarios.persona', 
+            'solicitante', 
+            'tipo.requisitos', 
+            'estado', 
+            'documentos.requisito', 
+            'documentos.estado'
+        ]);
+
         $estados_disponibles = TramiteEstado::orderBy('id')->get();
 
         // Llamar al servicio para obtener las predicciones
@@ -411,8 +433,7 @@ class TramiteController extends Controller
                 break;
 
             case 3: //  ID 3 = Fusión de Lotes
-                $viewName = 'admin.tramites.certificaciones.fusion_lotes'; 
-                $fileName = "certificacion-fusion-{$tramite->predio->codigo_catastral}.pdf";
+                return redirect()->route('admin.tramites.fusionForm', $tramite);
                 break;
 
             case 5: //  ID 5 = Línea y Nivel
@@ -656,10 +677,14 @@ class TramiteController extends Controller
 
         $tramite->load('predio.propietarios.persona');
         
-        // Obtenemos todos los propietarios para los selectores
-        $propietarios_lista = Propietario::with('persona')->where('estado', true)->get();
+        // Obtenemos los predios disponibles para seleccionar (excluyendo el original y eliminados)
+        // Filtramos por el mismo municipio para evitar listas gigantes, y ordenamos por código
+        $prediosDisponibles = Predio::where('municipio_id', $tramite->municipio_id)
+                                    ->where('id', '!=', $tramite->predio_id)
+                                    ->orderBy('codigo_catastral', 'desc')
+                                    ->get();
 
-        return view('admin.tramites.certificaciones.division-form', compact('tramite', 'propietarios_lista'));
+        return view('admin.tramites.certificaciones.division-form', compact('tramite', 'prediosDisponibles'));
     }
 
     /**
@@ -671,30 +696,57 @@ class TramiteController extends Controller
             'testimonio_numero' => 'required|string|max:100',
             'testimonio_fecha' => 'required|date',
             'superficie_total' => 'required|numeric|min:0',
-            'incisos' => 'required|array|min:2', // Debe tener al menos 2 lotes resultantes
-            'incisos.*.manzano' => 'required|string|max:100',
-            'incisos.*.lote' => 'required|string|max:100',
-            'incisos.*.superficie' => 'required|numeric|min:0',
-            'incisos.*.propietario_id' => 'required|integer|exists:propietarios,id',
-            'incisos.*.lote_nuevo' => 'required|string|max:100',
+            'incisos' => 'required|array|min:2', 
+            'incisos.*.predio_id' => 'required|exists:predios,id', // ID del predio seleccionado
+            'incisos.*.denominativo' => 'required|string|max:100', // El "LOTE 4-A"
+            'incisos.*.lote_nuevo' => 'required|string|max:100', // El número nuevo
             'incisos.*.superficie_legal_porcentaje' => 'required|numeric|min:0|max:100',
             'incisos.*.superficie_util_porcentaje' => 'required|numeric|min:0|max:100',
-            'incisos.*.col_norte' => 'required|string',
-            'incisos.*.col_sur' => 'required|string',
-            'incisos.*.col_este' => 'required|string',
-            'incisos.*.col_oeste' => 'required|string',
         ]);
 
-        // Cargar relaciones
-        $tramite->load('predio.propietarios.persona', 'predio.via', 'predio.provincia');
+        // 1. DESACTIVAR EL PREDIO ORIGINAL (Soft Delete)
+        // Cargamos el predio original y lo borramos
+        $predioOriginal = $tramite->predio;
+        if ($predioOriginal) {
+            $predioOriginal->delete();
+        }
 
-        // Procesar los incisos para obtener los nombres de los propietarios
+        // 2. Preparar datos para el PDF
+        $tramite->load(['predio' => function ($query) {
+            $query->withTrashed();
+        }, 'predio.propietarios.persona', 'predio.via', 'predio.provincia']);
+
         $incisosData = [];
-        foreach ($request->incisos as $inciso) {
-            $propietario = Propietario::with('persona')->find($inciso['propietario_id']);
-            $inciso['propietario_nombre'] = $propietario->persona->nombre_completo;
-            $inciso['propietario_ci'] = $propietario->persona->carnet . ' ' . $propietario->persona->expedido;
-            $incisosData[] = $inciso;
+        
+        foreach ($request->incisos as $incisoInput) {
+            // Cargar el predio seleccionado con sus relaciones
+            $predioSeleccionado = Predio::with(['propietarios.persona'])->find($incisoInput['predio_id']);
+            
+            // Construir el array combinando datos del predio + inputs manuales
+            $incisosData[] = [
+                // Datos manuales
+                'lote' => $incisoInput['denominativo'], // Ej: "LOTE 4-A"
+                'lote_nuevo' => $incisoInput['lote_nuevo'], // Ej: "24"
+                'superficie_legal_porcentaje' => $incisoInput['superficie_legal_porcentaje'],
+                'superficie_util_porcentaje' => $incisoInput['superficie_util_porcentaje'],
+                
+                // Datos extraídos automáticamente del predio seleccionado
+                'manzano' => $predioSeleccionado->manzano,
+                'superficie' => $predioSeleccionado->sup_levantamiento, // Asumimos sup. levantamiento
+                
+                'col_norte' => $predioSeleccionado->colindante_norte ?? 'S/N',
+                'col_sur' => $predioSeleccionado->colindante_sur ?? 'S/N',
+                'col_este' => $predioSeleccionado->colindante_este ?? 'S/N',
+                'col_oeste' => $predioSeleccionado->colindante_oeste ?? 'S/N',
+
+                'propietario_id' => $predioSeleccionado->propietarios->first()->id ?? 0, // Referencia
+                'propietario_nombre' => $predioSeleccionado->propietarios->map(function($p) {
+                    return $p->persona->nombre_completo;
+                })->join(' y '),
+                'propietario_ci' => $predioSeleccionado->propietarios->map(function($p) {
+                    return $p->persona->carnet . ' ' . $p->persona->expedido;
+                })->join(' y '),
+            ];
         }
 
         $datos = [
@@ -704,7 +756,7 @@ class TramiteController extends Controller
             'testimonio_numero' => $request->testimonio_numero,
             'testimonio_fecha_formato' => Carbon::parse($request->testimonio_fecha)->locale('es')->isoFormat('D \d\e MMMM \d\e\l Y'),
             'superficie_total' => $request->superficie_total,
-            'incisos' => $incisosData, // El array de incisos con los datos del form
+            'incisos' => $incisosData, 
             'fecha_actual_larga' => Carbon::now()->locale('es')->isoFormat('D \d\e MMMM \d\e\l Y'),
             'img_escudo' => $this->getImageAsBase64(public_path('img/escudo_bolivia.png')),
             'img_logo' => $this->getImageAsBase64(public_path('img/logo_catastro_ayoayo.png')),
@@ -712,10 +764,242 @@ class TramiteController extends Controller
 
         // Cargar la vista del PDF
         $pdf = app('dompdf.wrapper');
-        $pdf->loadView('admin.tramites.certificaciones.pdf.division-pdf', $datos);
+        $pdf->loadView('admin.tramites.certificaciones.division-pdf', $datos);
         $pdf->setPaper('letter', 'portrait');
         $fileName = 'Resolucion_Division_' . $tramite->id . '.pdf';
         
         return $pdf->stream($fileName);
+    }
+
+    /**
+     * Muestra el formulario para Fusión de Lotes.
+     */
+    public function showFusionForm(Tramite $tramite)
+    {
+        if (strtoupper($tramite->estado->nombre) !== 'APROBADO' && strtoupper($tramite->estado->nombre) !== 'ENTREGADO') {
+            return redirect()->route('admin.tramites.show', $tramite)->withErrors('El trámite debe estar APROBADO para generar esta certificación.');
+        }
+
+        $tramite->load('predio.propietarios.persona');
+        
+        // Predios disponibles para seleccionar (como anexados o resultante)
+        $prediosDisponibles = Predio::where('municipio_id', $tramite->municipio_id)
+                                    ->where('id', '!=', $tramite->predio_id)
+                                    ->orderBy('codigo_catastral', 'desc')
+                                    ->get();
+
+        return view('admin.tramites.certificaciones.fusion-form', compact('tramite', 'prediosDisponibles'));
+    }
+
+    /**
+     * Genera el PDF final de Fusión y Anexión.
+     */
+    public function generateFusionPdf(Request $request, Tramite $tramite)
+    {
+        $request->validate([
+            'testimonio_numero' => 'required|string|max:100',
+            'testimonio_fecha' => 'required|date',
+            'predios_anexados' => 'required|array|min:1', // Al menos un predio adicional
+            'predios_anexados.*' => 'exists:predios,id',
+            'predio_resultante_id' => 'required|exists:predios,id',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            // 1. Desactivar Predio Original
+            // Verificar si ya está borrado para evitar errores (aunque delete es idempotente)
+            if ($tramite->predio) {
+                $tramite->predio->delete();
+            }
+
+            // 2. Desactivar Predios Anexados
+            foreach ($request->predios_anexados as $id) {
+                $p = Predio::find($id);
+                if ($p) $p->delete();
+            }
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->withErrors('Error al procesar la fusión: ' . $e->getMessage());
+        }
+
+        // 3. Cargar datos para PDF
+        // Recuperar información de los predios borrados para el reporte
+        $predioBase = $tramite->predio()->withTrashed()->with('propietarios.persona')->first();
+        
+        $prediosAnexados = Predio::withTrashed()
+            ->with('propietarios.persona')
+            ->whereIn('id', $request->predios_anexados)
+            ->get();
+
+        $predioResultante = Predio::with(['propietarios.persona', 'via', 'provincia', 'planimetria'])
+            ->find($request->predio_resultante_id);
+
+        $datos = [
+            'tramite' => $tramite,
+            'predioBase' => $predioBase,
+            'prediosAnexados' => $prediosAnexados,
+            'predioResultante' => $predioResultante,
+            'testimonio_numero' => $request->testimonio_numero,
+            'testimonio_fecha_formato' => Carbon::parse($request->testimonio_fecha)->locale('es')->isoFormat('D \d\e MMMM \d\e\l Y'),
+            'fecha_actual_larga' => Carbon::now()->locale('es')->isoFormat('D \d\e MMMM \d\e\l Y'),
+            'img_escudo' => $this->getImageAsBase64(public_path('img/escudo_bolivia.png')),
+            'img_logo' => $this->getImageAsBase64(public_path('img/logo_catastro_ayoayo.png')),
+        ];
+
+        $pdf = app('dompdf.wrapper');
+        $pdf->loadView('admin.tramites.certificaciones.fusion-pdf', $datos);
+        $pdf->setPaper('letter', 'portrait');
+        
+        return $pdf->stream('Resolucion_Fusion_' . $tramite->id . '.pdf');
+    }
+
+    /**
+     * Muestra el formulario para EJECUTAR la división (Crear nuevos predios).
+     */
+    public function createDivision(Tramite $tramite)
+    {
+        // Validar que el trámite esté aprobado
+        if (strtoupper($tramite->estado->nombre) !== 'APROBADO' && strtoupper($tramite->estado->nombre) !== 'ENTREGADO') {
+            return redirect()->route('admin.tramites.show', $tramite)->withErrors('El trámite debe estar APROBADO para ejecutar la división.');
+        }
+
+        // Cargar datos necesarios para los formularios de predios (Misma lógica que PredioController@create)
+        $municipios = Municipio::all();
+        $planimetrias = Planimetria::all();
+        $propietarios = Propietario::with('persona')->where('estado', true)->get();
+        // Predios padre para PH (excluyendo el actual por si acaso, aunque al dividirse deja de existir)
+        $prediosPadre = Predio::where('propiedad_horizontal', true)->where('id', '!=', $tramite->predio_id)->get();
+        $vias = Via::all();
+        $materialesVias = MaterialVia::all();
+        $provincias = Provincia::all();
+        $centrosPoblados = CentroPoblado::all();
+
+        // Pasamos el predio original para referencia
+        $predioOriginal = $tramite->predio;
+
+        return view('admin.tramites.division.execute', compact(
+            'tramite', 
+            'predioOriginal',
+            'municipios', 
+            'planimetrias', 
+            'propietarios', 
+            'prediosPadre', 
+            'vias', 
+            'materialesVias', 
+            'provincias', 
+            'centrosPoblados'
+        ));
+    }
+
+    /**
+     * Almacena la división ejecutada (crea nuevos predios y desactiva el anterior).
+     */
+    public function storeDivision(Request $request, Tramite $tramite)
+    {
+        $request->validate([
+            'testimonio_numero' => 'nullable|string|max:100',
+            'testimonio_fecha' => 'nullable|date',
+            'predios' => 'required|array|min:2', // Al menos 2 predios resultantes
+            'predios.*.planimetria_id' => 'required|exists:planimetrias,id',
+            'predios.*.propietarios' => 'required|array',
+            'predios.*.propietarios.*' => 'exists:propietarios,id',
+            'predios.*.codigo_catastral' => 'required|string|distinct',
+            'predios.*.numero_matricula_folio' => 'required|string',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $lotesGenerados = [];
+
+            // 1. Crear los nuevos predios
+            foreach ($request->predios as $index => $predioData) {
+                
+                // Determinar el valor del lote: Si hay denominativo (ej. 4-A), se usa ese. Si no, el lote numérico.
+                $loteValor = !empty($predioData['denominativo']) ? $predioData['denominativo'] : ($predioData['lote'] ?? null);
+
+                $data = [
+                    'municipio_id' => $tramite->municipio_id,
+                    'planimetria_id' => $predioData['planimetria_id'],
+                    'numero_plano' => $predioData['numero_plano'] ?? null,
+                    'numero_matricula_folio' => $predioData['numero_matricula_folio'],
+                    'codigo_catastral' => $predioData['codigo_catastral'],
+                    'manzano' => $predioData['manzano'] ?? null,
+                    'lote' => $loteValor, // Usamos el valor determinado
+                    'zona' => $predioData['zona'] ?? null,
+                    'provincia_id' => $predioData['provincia_id'] ?? null,
+                    'centro_poblado_id' => $predioData['centro_poblado_id'] ?? null,
+                    
+                    'sup_levantamiento' => $predioData['sup_levantamiento'] ?? 0,
+                    'sup_testimonio' => $predioData['sup_testimonio'] ?? 0,
+                    'sup_construida' => $predioData['sup_construida'] ?? 0,
+                    'sup_afectada' => $predioData['sup_afectada'] ?? 0,
+                    'sup_util' => $predioData['sup_util'] ?? 0,
+
+                    'colindante_norte' => $predioData['colindante_norte'] ?? null,
+                    'colindante_sur' => $predioData['colindante_sur'] ?? null,
+                    'colindante_este' => $predioData['colindante_este'] ?? null,
+                    'colindante_oeste' => $predioData['colindante_oeste'] ?? null,
+
+                    'frente_principal' => $predioData['frente_principal'] ?? 0,
+                    'id_material_via' => $predioData['id_material_via'] ?? null,
+                    'via_id' => $predioData['via_id'] ?? null,
+                    'forma_lote' => ($predioData['forma_lote'] ?? '') === 'Regular',
+
+                    'propiedad_horizontal' => isset($predioData['propiedad_horizontal']),
+                    'inmueble_padre_id' => $predioData['inmueble_padre_id'] ?? null,
+                    'numero_unidad' => $predioData['numero_unidad'] ?? null,
+
+                    'agua_potable' => isset($predioData['agua_potable']),
+                    'energia_electrica' => isset($predioData['energia_electrica']),
+                    'alcantarillado' => isset($predioData['alcantarillado']),
+                    'alumbrado_publico' => isset($predioData['alumbrado_publico']),
+                    'gas_domiciliario' => isset($predioData['gas_domiciliario']),
+                ];
+
+                // NOTA: Se han removido fotos y coordenadas para este flujo rápido.
+
+                $nuevoPredio = Predio::create($data);
+                $lotesGenerados[] = $nuevoPredio->codigo_catastral . " (" . $loteValor . ")";
+
+                // Asignar Propietarios
+                if (!empty($predioData['propietarios'])) {
+                    $nuevoPredio->propietarios()->attach($predioData['propietarios'], [
+                        'estado' => 'Propietario Actual',
+                        'fecha_inicio' => now(),
+                    ]);
+                }
+            }
+
+            // 2. Desactivar el Predio Original
+            $predioOriginal = $tramite->predio;
+            $predioOriginal->delete(); 
+
+            $tramite->observaciones .= "\n- División ejecutada el " . now()->format('d/m/Y') . ". Lotes creados: " . implode(", ", $lotesGenerados);
+            $tramite->save();
+
+            DB::commit();
+
+            return redirect()->route('admin.tramites.show', $tramite)->with('success', 'División ejecutada correctamente. Nuevos predios creados: ' . count($lotesGenerados));
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->withInput()->withErrors(['error' => 'Error al ejecutar la división: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Compara dos objetos Point con una tolerancia para decimales.
+     */
+    private function pointsAreEqual(Point $a, Point $b, float $epsilon = 1e-9): bool
+    {
+        $ax = $a->getX();
+        $ay = $a->getY();
+        $bx = $b->getX();
+        $by = $b->getY();
+
+        return (abs($ax - $bx) < $epsilon) && (abs($ay - $by) < $epsilon);
     }
 }
