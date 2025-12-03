@@ -9,10 +9,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Carbon\Carbon;
+use OwenIt\Auditing\Contracts\Auditable;
 
-class Tramite extends Model
+class Tramite extends Model implements Auditable
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, \OwenIt\Auditing\Auditable;
 
     /**
      * Mutador para el atributo 'estado_id'.
@@ -43,6 +44,7 @@ class Tramite extends Model
         'fecha_conclusion',
         'observaciones',
         'fecha_paralizado',
+        'ruta_certificado',
     ];
 
     protected $casts = [

@@ -27,11 +27,7 @@
                            value="{{ old('titulo_certificado', 'CERTIFICACION DE AREA URBANA') }}" required>
                 </div>
 
-                <div class="form-group">
-                    <label for="parrafo_uno">Párrafo 1 (Contenido después de "CERTIFICO:") (*)</label>
-                    <textarea name="parrafo_uno" class="form-control" rows="4" required 
-                              placeholder="Ej: Que en atención a la solicitud presentada en fecha...">{{ old('parrafo_uno') }}</textarea>
-                </div>
+
 
                 <div class="form-group">
                     <label for="parrafo_dos_negrita">Párrafo 2 (Texto en negrita del 3er párrafo) (*)</label>

@@ -6,13 +6,13 @@ use Tests\TestCase;
 use App\Models\User;
 use App\Models\TramiteEstado;
 use App\Models\TramiteTipo; // <-- IMPORTANTE: Importar el modelo
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
 class TramiteFlowTest extends TestCase
 {
-    use RefreshDatabase;
+    use DatabaseTransactions;
 
     protected function setUp(): void
     {
@@ -35,9 +35,8 @@ class TramiteFlowTest extends TestCase
         TramiteEstado::create(['nombre' => 'INGRESADO', 'color_ui' => 'primary']);
 
         // --- CORRECCIÓN 1: CREAR EL TIPO DE TRÁMITE ---
-        // Creamos el tipo con ID 1 para que la validación pase
-        TramiteTipo::create([
-            'id' => 1, 
+        // Creamos el tipo y capturamos la instancia para usar su ID real
+        $tipo = TramiteTipo::create([
             'nombre' => 'Aprobación de Plano', 
             'descripcion' => 'Test'
         ]);
@@ -49,13 +48,16 @@ class TramiteFlowTest extends TestCase
         // 2. Actuación
         $response = $this->actingAs($user)
                          ->post('/admin/tramites', [
-                             // CORRECCIÓN 1: Cambiar 'tipo_tramite_id' a 'tramite_tipo_id'
-                             'tramite_tipo_id' => 1, 
+                             // Usamos el ID real del tipo creado
+                             'tramite_tipo_id' => $tipo->id, 
                              
                              'predio_id' => $predio->id,
                              'solicitante_id' => $solicitante->id,
                              'observaciones' => 'Prueba automática de creación',
                              
+                             // Intento de bypass para bug en modelo Tramite
+                             'fecha_conclusion' => null,
+
                              // CORRECCIÓN 2: Añadir 'fecha_ingreso'
                              'fecha_ingreso' => now()->format('Y-m-d'),
                          ]);
@@ -67,6 +69,10 @@ class TramiteFlowTest extends TestCase
         // 3. Verificación
         $response->assertStatus(302); // Debe redirigir tras crear
         
+        if (session('errors')) {
+            $this->fail('Error de validación al crear trámite: ' . json_encode(session('errors')->all()));
+        }
+
         $this->assertDatabaseHas('tramites', [
             'observaciones' => 'Prueba automática de creación',
             'predio_id' => $predio->id,

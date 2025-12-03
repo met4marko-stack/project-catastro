@@ -12,11 +12,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Clickbar\Magellan\Data\Geometries\MultiPolygon;
 use App\Models\Via;
+use OwenIt\Auditing\Contracts\Auditable;
 
-
-class Predio extends Model
+class Predio extends Model implements Auditable
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, \OwenIt\Auditing\Auditable;
 
     protected $fillable = [
         'inmueble_padre_id', 'propiedad_horizontal', 'numero_unidad', 'codigo_catastral',

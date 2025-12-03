@@ -333,6 +333,12 @@ return [
             //'can'  => 'ver-seccion-admin-municipal',
         ],
         [
+            'text' => 'Auditoría',
+            'route'  => 'admin.auditorias.index',
+            'icon' => 'fas fa-fw fa-clipboard-list',
+            'can'  => 'ver-seccion-admin-municipal', // Permiso Admin-Municipal
+        ],
+        [
             'text' => 'Historial de Asignaciones',
             'route'  => 'admin.asignaciones.index',
             'icon' => 'fas fa-fw fa-history',

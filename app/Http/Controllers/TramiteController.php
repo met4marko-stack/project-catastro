@@ -409,7 +409,27 @@ class TramiteController extends Controller
 
     public function generarCertificacionTecnica(Tramite $tramite)
     {
-        $tramite->load(['solicitante', 'predio.via', 'predio.propietarios']);
+        // 1. Verificar si ya existe un certificado guardado
+        if ($tramite->ruta_certificado && Storage::disk('public')->exists($tramite->ruta_certificado)) {
+            // Si el certificado ya existe, lo descargamos directamente.
+            return Storage::disk('public')->download($tramite->ruta_certificado);
+        }
+
+        // 2. Cargar las relaciones necesarias, incluyendo predios borrados (withTrashed)
+        $tramite->load([
+            'solicitante',
+            'predio' => function ($query) {
+                $query->withTrashed();
+            },
+            'predio.via',
+            'predio.propietarios'
+        ]);
+
+        // Si el predio está borrado y no se pudo cargar, se retorna un error.
+        if (!$tramite->predio) {
+            return back()->withErrors('El predio asociado a este trámite no fue encontrado.');
+        }
+
         $meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
         $fecha_actual = [
             'mes' => $meses[now()->month - 1],
@@ -449,6 +469,13 @@ class TramiteController extends Controller
 
         $pdf = Pdf::loadView($viewName, compact('tramite', 'fecha_actual'));
         $pdf->setPaper('letter'); // Tamaño carta
+
+        // Guardar el PDF y actualizar la ruta_certificado del trámite
+        $filePath = 'certificados_tramite/' . $tramite->id . '/' . $fileName;
+        Storage::disk('public')->put($filePath, $pdf->output());
+
+        $tramite->ruta_certificado = $filePath;
+        $tramite->save();
 
         return $pdf->stream($fileName);
     }
@@ -529,12 +556,22 @@ class TramiteController extends Controller
         // 1. Validar los datos que el usuario escribió en el formulario
         $validated = $request->validate([
             'titulo_certificado' => 'required|string|max:255',
-            'parrafo_uno' => 'required|string|max:1000',
+            // 'parrafo_uno' ya no se valida porque es automático
             'parrafo_dos_negrita' => 'required|string|max:500',
         ]);
 
         // 2. Cargar los datos del trámite
         $tramite->load(['solicitante', 'predio']);
+        
+        // --- Lógica de generación automática del Párrafo 1 ---
+        Carbon::setLocale('es');
+        $fechaSolicitud = Carbon::parse($tramite->fecha_ingreso)->isoFormat('D \d\e MMMM \d\e\l Y');
+        $nombreSolicitante = $tramite->solicitante->nombre_completo;
+        $ciSolicitante = $tramite->solicitante->carnet . ' ' . $tramite->solicitante->expedido;
+
+        $parrafoUnoAutomatico = "Que en atención a la solicitud presentada en fecha {$fechaSolicitud}, por el Sr. {$nombreSolicitante} con C.I. {$ciSolicitante}, dirigida al Sr. Honorable Alcalde Municipal del Gobierno Autónomo Municipal de Ayo Ayo.";
+        // -----------------------------------------------------
+
         $meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
         $fecha_actual = [
             'dia' => now()->day, // Añadimos el día
@@ -562,7 +599,7 @@ class TramiteController extends Controller
             'fecha_actual' => $fecha_actual,
             'codigo_certificado' => $codigo_certificado,
             'input_titulo' => $validated['titulo_certificado'],
-            'input_parrafo_1' => $validated['parrafo_uno'],
+            'input_parrafo_1' => $parrafoUnoAutomatico, // Usamos el generado
             'input_parrafo_2_negrita' => $validated['parrafo_dos_negrita'],
         ];
 
@@ -704,71 +741,87 @@ class TramiteController extends Controller
             'incisos.*.superficie_util_porcentaje' => 'required|numeric|min:0|max:100',
         ]);
 
-        // 1. DESACTIVAR EL PREDIO ORIGINAL (Soft Delete)
-        // Cargamos el predio original y lo borramos
-        $predioOriginal = $tramite->predio;
-        if ($predioOriginal) {
-            $predioOriginal->delete();
-        }
+        DB::beginTransaction();
+        try {
+            // 1. DESACTIVAR EL PREDIO ORIGINAL (Soft Delete)
+            // Cargamos el predio original y lo borramos, si no ha sido borrado ya.
+            $predioOriginal = $tramite->predio()->withTrashed()->first(); // Cargar con soft-deleted
+            if ($predioOriginal && !$predioOriginal->trashed()) {
+                $predioOriginal->delete();
+            }
 
-        // 2. Preparar datos para el PDF
-        $tramite->load(['predio' => function ($query) {
-            $query->withTrashed();
-        }, 'predio.propietarios.persona', 'predio.via', 'predio.provincia']);
+            // 2. Preparar datos para el PDF
+            $tramite->load(['predio' => function ($query) {
+                $query->withTrashed();
+            }, 'predio.propietarios.persona', 'predio.via', 'predio.provincia']);
 
-        $incisosData = [];
-        
-        foreach ($request->incisos as $incisoInput) {
-            // Cargar el predio seleccionado con sus relaciones
-            $predioSeleccionado = Predio::with(['propietarios.persona'])->find($incisoInput['predio_id']);
+            $incisosData = [];
             
-            // Construir el array combinando datos del predio + inputs manuales
-            $incisosData[] = [
-                // Datos manuales
-                'lote' => $incisoInput['denominativo'], // Ej: "LOTE 4-A"
-                'lote_nuevo' => $incisoInput['lote_nuevo'], // Ej: "24"
-                'superficie_legal_porcentaje' => $incisoInput['superficie_legal_porcentaje'],
-                'superficie_util_porcentaje' => $incisoInput['superficie_util_porcentaje'],
+            foreach ($request->incisos as $incisoInput) {
+                // Cargar el predio seleccionado con sus relaciones, incluyendo los borrados
+                $predioSeleccionado = Predio::withTrashed()->with(['propietarios.persona'])->find($incisoInput['predio_id']);
                 
-                // Datos extraídos automáticamente del predio seleccionado
-                'manzano' => $predioSeleccionado->manzano,
-                'superficie' => $predioSeleccionado->sup_levantamiento, // Asumimos sup. levantamiento
-                
-                'col_norte' => $predioSeleccionado->colindante_norte ?? 'S/N',
-                'col_sur' => $predioSeleccionado->colindante_sur ?? 'S/N',
-                'col_este' => $predioSeleccionado->colindante_este ?? 'S/N',
-                'col_oeste' => $predioSeleccionado->colindante_oeste ?? 'S/N',
+                // Construir el array combinando datos del predio + inputs manuales
+                $incisosData[] = [
+                    // Datos manuales
+                    'lote' => $incisoInput['denominativo'], // Ej: "LOTE 4-A"
+                    'lote_nuevo' => $incisoInput['lote_nuevo'], // Ej: "24"
+                    'superficie_legal_porcentaje' => $incisoInput['superficie_legal_porcentaje'],
+                    'superficie_util_porcentaje' => $incisoInput['superficie_util_porcentaje'],
+                    
+                    // Datos extraídos automáticamente del predio seleccionado
+                    'manzano' => $predioSeleccionado->manzano,
+                    'superficie' => $predioSeleccionado->sup_levantamiento, // Asumimos sup. levantamiento
+                    
+                    'col_norte' => $predioSeleccionado->colindante_norte ?? 'S/N',
+                    'col_sur' => $predioSeleccionado->colindante_sur ?? 'S/N',
+                    'col_este' => $predioSeleccionado->colindante_este ?? 'S/N',
+                    'col_oeste' => $predioSeleccionado->colindante_oeste ?? 'S/N',
 
-                'propietario_id' => $predioSeleccionado->propietarios->first()->id ?? 0, // Referencia
-                'propietario_nombre' => $predioSeleccionado->propietarios->map(function($p) {
-                    return $p->persona->nombre_completo;
-                })->join(' y '),
-                'propietario_ci' => $predioSeleccionado->propietarios->map(function($p) {
-                    return $p->persona->carnet . ' ' . $p->persona->expedido;
-                })->join(' y '),
+                    'propietario_id' => $predioSeleccionado->propietarios->first()->id ?? 0, // Referencia
+                    'propietario_nombre' => $predioSeleccionado->propietarios->map(function($p) {
+                        return $p->persona->nombre_completo;
+                    })->join(' y '),
+                    'propietario_ci' => $predioSeleccionado->propietarios->map(function($p) {
+                        return $p->persona->carnet . ' ' . $p->persona->expedido;
+                    })->join(' y '),
+                ];
+            }
+
+            $datos = [
+                'tramite' => $tramite,
+                'propietarios' => $tramite->predio->propietarios,
+                'predio' => $tramite->predio,
+                'testimonio_numero' => $request->testimonio_numero,
+                'testimonio_fecha_formato' => Carbon::parse($request->testimonio_fecha)->locale('es')->isoFormat('D \d\e MMMM \d\e\l Y'),
+                'superficie_total' => $request->superficie_total,
+                'incisos' => $incisosData, 
+                'fecha_actual_larga' => Carbon::now()->locale('es')->isoFormat('D \d\e MMMM \d\e\l Y'),
+                'img_escudo' => $this->getImageAsBase64(public_path('img/escudo_bolivia.png')),
+                'img_logo' => $this->getImageAsBase64(public_path('img/logo_catastro_ayoayo.png')),
             ];
+
+            // Cargar la vista del PDF
+            $pdf = app('dompdf.wrapper');
+            $pdf->loadView('admin.tramites.certificaciones.division-pdf', $datos);
+            $pdf->setPaper('letter', 'portrait');
+            $fileName = 'Resolucion_Division_' . $tramite->id . '.pdf';
+            
+            // Guardar el PDF y actualizar la ruta_certificado del trámite
+            $filePath = 'certificados_tramite/' . $tramite->id . '/' . $fileName;
+            Storage::disk('public')->put($filePath, $pdf->output());
+
+            $tramite->ruta_certificado = $filePath;
+            $tramite->save();
+
+            DB::commit();
+
+            return $pdf->stream($fileName);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->withErrors('Error al generar el certificado de división: ' . $e->getMessage());
         }
-
-        $datos = [
-            'tramite' => $tramite,
-            'propietarios' => $tramite->predio->propietarios,
-            'predio' => $tramite->predio,
-            'testimonio_numero' => $request->testimonio_numero,
-            'testimonio_fecha_formato' => Carbon::parse($request->testimonio_fecha)->locale('es')->isoFormat('D \d\e MMMM \d\e\l Y'),
-            'superficie_total' => $request->superficie_total,
-            'incisos' => $incisosData, 
-            'fecha_actual_larga' => Carbon::now()->locale('es')->isoFormat('D \d\e MMMM \d\e\l Y'),
-            'img_escudo' => $this->getImageAsBase64(public_path('img/escudo_bolivia.png')),
-            'img_logo' => $this->getImageAsBase64(public_path('img/logo_catastro_ayoayo.png')),
-        ];
-
-        // Cargar la vista del PDF
-        $pdf = app('dompdf.wrapper');
-        $pdf->loadView('admin.tramites.certificaciones.division-pdf', $datos);
-        $pdf->setPaper('letter', 'portrait');
-        $fileName = 'Resolucion_Division_' . $tramite->id . '.pdf';
-        
-        return $pdf->stream($fileName);
     }
 
     /**
@@ -807,15 +860,19 @@ class TramiteController extends Controller
         DB::beginTransaction();
         try {
             // 1. Desactivar Predio Original
-            // Verificar si ya está borrado para evitar errores (aunque delete es idempotente)
-            if ($tramite->predio) {
-                $tramite->predio->delete();
+            // Cargar con withTrashed para asegurar que, si ya está borrado, podamos operar.
+            $predioOriginal = $tramite->predio()->withTrashed()->first();
+            if ($predioOriginal && !$predioOriginal->trashed()) {
+                $predioOriginal->delete();
             }
 
             // 2. Desactivar Predios Anexados
             foreach ($request->predios_anexados as $id) {
-                $p = Predio::find($id);
-                if ($p) $p->delete();
+                // Cargar con withTrashed
+                $p = Predio::withTrashed()->find($id);
+                if ($p && !$p->trashed()) {
+                    $p->delete();
+                }
             }
 
             DB::commit();
@@ -851,8 +908,16 @@ class TramiteController extends Controller
         $pdf = app('dompdf.wrapper');
         $pdf->loadView('admin.tramites.certificaciones.fusion-pdf', $datos);
         $pdf->setPaper('letter', 'portrait');
+        $fileName = 'Resolucion_Fusion_' . $tramite->id . '.pdf';
         
-        return $pdf->stream('Resolucion_Fusion_' . $tramite->id . '.pdf');
+        // Guardar el PDF y actualizar la ruta_certificado del trámite
+        $filePath = 'certificados_tramite/' . $tramite->id . '/' . $fileName;
+        Storage::disk('public')->put($filePath, $pdf->output());
+
+        $tramite->ruta_certificado = $filePath;
+        $tramite->save();
+
+        return $pdf->stream($fileName);
     }
 
     /**

@@ -72,6 +72,14 @@ Route::middleware(['auth', 'nocache'])->group(function () {
             ->name('asignaciones.index')
             ->middleware('role:Super-Admin');
 
+        // Módulo de Auditoría (Logs del Sistema)
+        Route::get('auditorias', [App\Http\Controllers\AuditoriaController::class, 'index'])
+            ->name('auditorias.index')
+            ->middleware('role:Super-Admin|Admin-Municipal');
+        Route::get('auditorias/{id}', [App\Http\Controllers\AuditoriaController::class, 'show'])
+            ->name('auditorias.show')
+            ->middleware('role:Super-Admin|Admin-Municipal');
+
         // Módulo de Propietarios
         // Ruta para Reactivar un propietario
         Route::post('propietarios/{id}/restore', [PropietarioController::class, 'restore'])
