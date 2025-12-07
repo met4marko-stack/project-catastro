@@ -51,12 +51,12 @@ class ProfileController extends Controller
             'segundo_apellido' => 'nullable|string|max:255',
             // Valida que el carnet sea único en la tabla personas, ignorando el de la persona actual
             'carnet' => [
-                'required', 
+                'nullable', 
                 'string', 
                 'max:255',
                 Rule::unique('personas')->ignore($user->persona->id),
             ],
-            'expedido' => 'required|string|max:5',
+            'expedido' => 'nullable|string|max:5',
             'telefono' => 'nullable|string|max:255',
             'fecha_nacimiento' => 'nullable|date',
             // 'ci_fecha_caducidad' es opcional, lo puedes añadir si lo necesitas en el formulario

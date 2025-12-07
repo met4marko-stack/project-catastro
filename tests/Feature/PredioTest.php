@@ -194,15 +194,17 @@ class PredioTest extends TestCase
         $this->assertNotNull($createdPredio);
 
         // Verificar que ambos propietarios estén adjuntos al predio
+        $estadoActualId = \App\Models\PropietarioPredioEstado::where('nombre', 'Propietario Actual')->value('id');
+
         $this->assertDatabaseHas('propietarios_predios', [
             'predio_id' => $createdPredio->id,
             'propietario_id' => $propietario1->id,
-            'estado' => 'Propietario Actual',
+            'estado_id' => $estadoActualId,
         ]);
         $this->assertDatabaseHas('propietarios_predios', [
             'predio_id' => $createdPredio->id,
             'propietario_id' => $propietario2->id,
-            'estado' => 'Propietario Actual',
+            'estado_id' => $estadoActualId,
         ]);
     }
 }

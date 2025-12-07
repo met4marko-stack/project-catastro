@@ -11,6 +11,7 @@ use App\Models\Via;
 use App\Models\MaterialVia;
 use App\Models\Provincia;
 use App\Models\CentroPoblado;
+use App\Models\PropietarioPredioEstado;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -32,7 +33,17 @@ class PredioController extends Controller
             $userAuth = Auth::user();
             $status = $request->input('status', 'active'); // 'active' por defecto
             // Consulta base con relaciones necesarias
-            $query = Predio::with(['municipio', 'planimetria', 'propietarios.persona', 'provincia', 'centroPoblado']);
+            $estadoActual = PropietarioPredioEstado::where('nombre', 'Propietario Actual')->firstOrFail();
+            $query = Predio::with([
+                'municipio',
+                'planimetria',
+                'propietarios' => function($q) use ($estadoActual) {
+                    $q->wherePivot('estado_id', $estadoActual->id);
+                },
+                'propietarios.persona',
+                'provincia',
+                'centroPoblado'
+            ]);
 
             if ($status == 'inactive') {
                 $query->onlyTrashed();
@@ -221,8 +232,9 @@ class PredioController extends Controller
             }
             $predio = Predio::create($data);
             if ($request->has('propietarios')) {
+                $estadoActual = PropietarioPredioEstado::where('nombre', 'Propietario Actual')->firstOrFail();
                 $predio->propietarios()->attach($request->propietarios, [
-                    'estado' => 'Propietario Actual',
+                    'estado_id' => $estadoActual->id,
                     'fecha_inicio' => now(),
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -252,6 +264,12 @@ class PredioController extends Controller
 
     public function edit(Predio $predio)
     {
+        // Cargar solo los propietarios actuales para que el formulario no muestre ex-propietarios
+        $estadoActual = PropietarioPredioEstado::where('nombre', 'Propietario Actual')->firstOrFail();
+        $predio->load(['propietarios' => function ($query) use ($estadoActual) {
+            $query->wherePivot('estado_id', $estadoActual->id);
+        }]);
+
         $municipios = Municipio::all();
         $planimetrias = Planimetria::all();
         $propietarios = Propietario::with('persona')->where('estado', true)->get();
@@ -383,19 +401,51 @@ class PredioController extends Controller
             // 4. Actualiza el predio
             $predio->update($data);
 
-            // 5. Sincroniza los propietarios en la tabla pivote
+            // 5. Sincroniza los propietarios con lógica de historial
             if ($request->has('propietarios')) {
-                // sync() elimina las relaciones antiguas y añade las nuevas.
-                // Preparamos los datos pivote para asegurar consistencia
-                $syncData = [];
-                foreach ($request->propietarios as $propId) {
-                    $syncData[$propId] = [
-                        'estado' => 'Propietario Actual',
-                        'fecha_inicio' => now(), // Se asume que al editar se "renueva" o se corrige la asignación actual
-                        'updated_at' => now(),
-                    ];
+                $estadoActual = PropietarioPredioEstado::where('nombre', 'Propietario Actual')->firstOrFail();
+                $estadoEx = PropietarioPredioEstado::where('nombre', 'Ex-Propietario')->firstOrFail();
+
+                $nuevosPropietariosIds = $request->propietarios;
+
+                // Obtener IDs actuales activos
+                // Nota: Usamos newPivotStatement o una query directa para evitar cargar modelos pesados si solo queremos IDs,
+                // pero usando la relación Eloquent es más limpio si no son muchos.
+                $idsActuales = $predio->propietarios()
+                    ->wherePivot('estado_id', $estadoActual->id)
+                    ->pluck('propietarios.id')
+                    ->toArray();
+
+                // Identificar cambios
+                $aEliminar = array_diff($idsActuales, $nuevosPropietariosIds); // Estaban y ya no están
+                $aAgregar = array_diff($nuevosPropietariosIds, $idsActuales); // No estaban y ahora están
+
+                // 1. Marcar como Ex-Propietarios a los que se quitan
+                if (!empty($aEliminar)) {
+                    $predio->propietarios()->newPivotStatement()
+                        ->where('predio_id', $predio->id)
+                        ->whereIn('propietario_id', $aEliminar)
+                        ->where('estado_id', $estadoActual->id)
+                        ->update([
+                            'estado_id' => $estadoEx->id,
+                            'fecha_fin' => now(),
+                            'updated_at' => now()
+                        ]);
                 }
-                $predio->propietarios()->sync($syncData);
+
+                // 2. Agregar nuevos como Propietario Actual
+                if (!empty($aAgregar)) {
+                    $attachData = [];
+                    foreach ($aAgregar as $id) {
+                        $attachData[$id] = [
+                            'estado_id' => $estadoActual->id,
+                            'fecha_inicio' => now(),
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ];
+                    }
+                    $predio->propietarios()->attach($attachData);
+                }
             }
 
             DB::commit();
@@ -633,8 +683,12 @@ PROMPT;
 
     public function getPropietariosAjax(Predio $predio)
     {
-        $predio->load(['propietarios' => function ($query) {
-            $query->where('propietarios.estado', true)->with('persona');
+        $estadoActual = PropietarioPredioEstado::where('nombre', 'Propietario Actual')->firstOrFail();
+
+        $predio->load(['propietarios' => function ($query) use ($estadoActual) {
+            $query->where('propietarios.estado', true) // Estado del propietario (si está activo en el sistema)
+                  ->wherePivot('estado_id', $estadoActual->id) // Estado de la relación con el predio
+                  ->with('persona');
         }]);
 
         $propietariosData = $predio->propietarios->map(function ($propietario) {

@@ -84,7 +84,7 @@ class Predio extends Model implements Auditable
     public function propietarios(): BelongsToMany
     {
         return $this->belongsToMany(Propietario::class, 'propietarios_predios')
-                    ->withPivot('estado', 'fecha_inicio', 'fecha_fin')
+                    ->withPivot('estado_id', 'fecha_inicio', 'fecha_fin')
                     ->withTimestamps();
     }
 

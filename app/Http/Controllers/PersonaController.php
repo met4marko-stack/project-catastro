@@ -18,8 +18,8 @@ class PersonaController extends Controller
             'nombre' => 'required|string|max:255',
             'primer_apellido' => 'required|string|max:255',
             'segundo_apellido' => 'nullable|string|max:255', // Permite que sea opcional
-            'carnet' => 'required|string|max:255|unique:personas,carnet',
-            'expedido' => 'required|string|max:2', // Validar que sea un código de 2 letras
+            'carnet' => 'nullable|string|max:255|unique:personas,carnet',
+            'expedido' => 'nullable|string|max:2', // Validar que sea un código de 2 letras
         ]);
 
         if ($validator->fails()) {

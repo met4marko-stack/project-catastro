@@ -116,7 +116,7 @@ class PropietarioController extends Controller
         $request->validate([
             'nombre' => 'required|string|max:255',
             'primer_apellido' => 'required|string|max:255',
-            'carnet' => 'required|string|max:255|unique:personas,carnet',
+            'carnet' => 'nullable|string|max:255|unique:personas,carnet',
             'ci_fecha_caducidad' => 'nullable|date|required_if:ci_es_indefinido,false',
             'ci_es_indefinido' => 'nullable|boolean',
             'municipio_id' => Auth::user()->hasRole('Super-Admin') ? 'required|exists:municipios,id' : 'nullable',
@@ -167,7 +167,7 @@ class PropietarioController extends Controller
         $request->validate([
             'nombre' => 'required|string|max:255',
             'primer_apellido' => 'required|string|max:255',
-            'carnet' => 'required|string|max:255|unique:personas,carnet,' . $propietario->persona_id,
+            'carnet' => 'nullable|string|max:255|unique:personas,carnet,' . $propietario->persona_id,
             'ci_fecha_caducidad' => 'nullable|date|required_if:ci_es_indefinido,false',
             'ci_es_indefinido' => 'nullable|boolean',
             'municipio_id' => Auth::user()->hasRole('Super-Admin') ? 'required|exists:municipios,id' : 'nullable',

@@ -16,6 +16,7 @@ use App\Models\Via;
 use App\Models\MaterialVia;
 use App\Models\Provincia;
 use App\Models\CentroPoblado;
+use App\Models\PropietarioPredioEstado;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -191,18 +192,21 @@ class TramiteController extends Controller
     {
         // Cargar todas las relaciones necesarias para la vista de detalles
         // MODIFICACIÓN: Usamos un closure para incluir 'withTrashed' en la relación predio
-        $tramite->load([
-            'predio' => function ($query) {
-                $query->withTrashed();
-            },
-            'predio.propietarios.persona', 
-            'solicitante', 
-            'tipo.requisitos', 
-            'estado', 
-            'documentos.requisito', 
-            'documentos.estado'
-        ]);
-
+                $tramite->load([
+                    'predio' => function ($query) {
+                        $query->withTrashed();
+                    },
+                    'predio.propietarios' => function($q) {
+                        $estadoActual = \App\Models\PropietarioPredioEstado::where('nombre', 'Propietario Actual')->firstOrFail();
+                        $q->wherePivot('estado_id', $estadoActual->id);
+                    },
+                    'predio.propietarios.persona',
+                    'solicitante',
+                    'tipo.requisitos',
+                    'estado',
+                    'documentos.requisito',
+                    'documentos.estado'
+                ]);
         $estados_disponibles = TramiteEstado::orderBy('id')->get();
 
         // Llamar al servicio para obtener las predicciones
@@ -1031,8 +1035,9 @@ class TramiteController extends Controller
 
                 // Asignar Propietarios
                 if (!empty($predioData['propietarios'])) {
+                    $estadoActual = PropietarioPredioEstado::where('nombre', 'Propietario Actual')->firstOrFail();
                     $nuevoPredio->propietarios()->attach($predioData['propietarios'], [
-                        'estado' => 'Propietario Actual',
+                        'estado_id' => $estadoActual->id,
                         'fecha_inicio' => now(),
                     ]);
                 }
