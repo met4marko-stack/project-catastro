@@ -12,6 +12,9 @@ use App\Models\MaterialVia;
 use App\Models\Provincia;
 use App\Models\CentroPoblado;
 use App\Models\PropietarioPredioEstado;
+use App\Models\Orientacion;
+use App\Models\TipoColindante;
+use App\Models\PredioColindancia;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -114,8 +117,10 @@ class PredioController extends Controller
 
         $provincias = Provincia::all();
         $centrosPoblados = CentroPoblado::all();
+        $orientaciones = Orientacion::all();
+        $tiposColindante = TipoColindante::all();
 
-        return view('admin.predios.create', compact('predio', 'municipios', 'planimetrias', 'propietarios', 'prediosPadre', 'vias', 'materialesVias', 'provincias', 'centrosPoblados'));
+        return view('admin.predios.create', compact('predio', 'municipios', 'planimetrias', 'propietarios', 'prediosPadre', 'vias', 'materialesVias', 'provincias', 'centrosPoblados', 'orientaciones', 'tiposColindante'));
     }
 
     public function store(Request $request)
@@ -165,11 +170,12 @@ class PredioController extends Controller
             'fotografia_cuatro' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
             'fotografia_cinco' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
 
-            // Colindantes
-            'colindante_norte' => 'nullable|string|max:255',
-            'colindante_sur' => 'nullable|string|max:255',
-            'colindante_este' => 'nullable|string|max:255',
-            'colindante_oeste' => 'nullable|string|max:255',
+            // Colindantes (Array)
+            'colindancias' => 'nullable|array',
+            'colindancias.*.orientacion_id' => 'required|exists:orientaciones,id',
+            'colindancias.*.tipo_colindante_id' => 'required|exists:tipo_colindantes,id',
+            'colindancias.*.via_id' => 'nullable|exists:vias,id',
+            'colindancias.*.nombre_o_numero' => 'nullable|string|max:255',
 
             // Relaciones
             'planimetria_id' => 'required|integer|exists:planimetrias,id',
@@ -181,7 +187,7 @@ class PredioController extends Controller
             DB::beginTransaction();
 
             // 1. Prepara los datos del predio
-            $data = $request->except(['propietarios', 'coordenadas_text', '_token', '_method', 'fotografia_uno', 'fotografia_dos', 'fotografia_tres', 'fotografia_cuatro', 'fotografia_cinco']);
+            $data = $request->except(['propietarios', 'colindancias', 'coordenadas_text', '_token', '_method', 'fotografia_uno', 'fotografia_dos', 'fotografia_tres', 'fotografia_cuatro', 'fotografia_cinco']);
 
             $data['municipio_id'] = Auth::user()->hasRole('Admin-Municipal') ? Auth::user()->municipio_id : $request->municipio_id;
 
@@ -231,6 +237,19 @@ class PredioController extends Controller
                 }
             }
             $predio = Predio::create($data);
+
+            // Guardar Colindancias
+            if ($request->has('colindancias')) {
+                foreach ($request->colindancias as $colindanciaData) {
+                    $predio->colindancias()->create([
+                        'orientacion_id' => $colindanciaData['orientacion_id'],
+                        'tipo_colindante_id' => $colindanciaData['tipo_colindante_id'],
+                        'via_id' => $colindanciaData['via_id'] ?? null,
+                        'nombre_o_numero' => $colindanciaData['nombre_o_numero'] ?? null,
+                    ]);
+                }
+            }
+
             if ($request->has('propietarios')) {
                 $estadoActual = PropietarioPredioEstado::where('nombre', 'Propietario Actual')->firstOrFail();
                 $predio->propietarios()->attach($request->propietarios, [
@@ -264,11 +283,16 @@ class PredioController extends Controller
 
     public function edit(Predio $predio)
     {
-        // Cargar solo los propietarios actuales para que el formulario no muestre ex-propietarios
+        // Cargar solo los propietarios actuales y colindancias
         $estadoActual = PropietarioPredioEstado::where('nombre', 'Propietario Actual')->firstOrFail();
-        $predio->load(['propietarios' => function ($query) use ($estadoActual) {
-            $query->wherePivot('estado_id', $estadoActual->id);
-        }]);
+        $predio->load([
+            'propietarios' => function ($query) use ($estadoActual) {
+                $query->wherePivot('estado_id', $estadoActual->id);
+            },
+            'colindancias.orientacion',
+            'colindancias.tipoColindante',
+            'colindancias.via'
+        ]);
 
         $municipios = Municipio::all();
         $planimetrias = Planimetria::all();
@@ -279,8 +303,10 @@ class PredioController extends Controller
 
         $provincias = Provincia::all();
         $centrosPoblados = CentroPoblado::all();
+        $orientaciones = Orientacion::all();
+        $tiposColindante = TipoColindante::all();
 
-        return view('admin.predios.edit', compact('predio', 'municipios', 'planimetrias', 'propietarios', 'prediosPadre', 'vias', 'materialesVias', 'provincias', 'centrosPoblados'));
+        return view('admin.predios.edit', compact('predio', 'municipios', 'planimetrias', 'propietarios', 'prediosPadre', 'vias', 'materialesVias', 'provincias', 'centrosPoblados', 'orientaciones', 'tiposColindante'));
     }
 
     public function update(Request $request, Predio $predio)
@@ -334,11 +360,12 @@ class PredioController extends Controller
             'fotografia_cuatro' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
             'fotografia_cinco' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
 
-            // Colindantes
-            'colindante_norte' => 'nullable|string|max:255',
-            'colindante_sur' => 'nullable|string|max:255',
-            'colindante_este' => 'nullable|string|max:255',
-            'colindante_oeste' => 'nullable|string|max:255',
+            // Colindantes (Array)
+            'colindancias' => 'nullable|array',
+            'colindancias.*.orientacion_id' => 'required|exists:orientaciones,id',
+            'colindancias.*.tipo_colindante_id' => 'required|exists:tipo_colindantes,id',
+            'colindancias.*.via_id' => 'nullable|exists:vias,id',
+            'colindancias.*.nombre_o_numero' => 'nullable|string|max:255',
 
             // Relaciones
             'planimetria_id' => 'required|integer|exists:planimetrias,id',
@@ -350,7 +377,7 @@ class PredioController extends Controller
             DB::beginTransaction();
 
             // 1. Prepara los datos del predio
-            $data = $request->except(['propietarios', 'coordenadas_text', '_token', '_method', 'fotografia_uno', 'fotografia_dos', 'fotografia_tres', 'fotografia_cuatro', 'fotografia_cinco']);
+            $data = $request->except(['propietarios', 'colindancias', 'coordenadas_text', '_token', '_method', 'fotografia_uno', 'fotografia_dos', 'fotografia_tres', 'fotografia_cuatro', 'fotografia_cinco']);
 
             // Formatear manzano y lote con ceros iniciales si es necesario
             $data['manzano'] = $this->formatManzanoLote($request->input('manzano'));
@@ -400,6 +427,19 @@ class PredioController extends Controller
 
             // 4. Actualiza el predio
             $predio->update($data);
+
+            // Guardar Colindancias (Borrar anteriores y crear nuevas)
+            if ($request->has('colindancias')) {
+                $predio->colindancias()->delete();
+                foreach ($request->colindancias as $colindanciaData) {
+                    $predio->colindancias()->create([
+                        'orientacion_id' => $colindanciaData['orientacion_id'],
+                        'tipo_colindante_id' => $colindanciaData['tipo_colindante_id'],
+                        'via_id' => $colindanciaData['via_id'] ?? null,
+                        'nombre_o_numero' => $colindanciaData['nombre_o_numero'] ?? null,
+                    ]);
+                }
+            }
 
             // 5. Sincroniza los propietarios con lógica de historial
             if ($request->has('propietarios')) {

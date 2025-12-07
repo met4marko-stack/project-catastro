@@ -115,19 +115,19 @@
     <table class="table-bordered table-colindancias">
         <tr>
             <td>NORTE:</td>
-            <td>{{ $tramite->predio->colindante_norte ?? 'N/A' }}</td>
+            <td>{{ $tramite->predio->getColindanciaString('NORTE') }}</td>
         </tr>
         <tr>
             <td>SUR:</td>
-            <td>{{ $tramite->predio->colindante_sur ?? 'N/A' }}</td>
+            <td>{{ $tramite->predio->getColindanciaString('SUR') }}</td>
         </tr>
         <tr>
             <td>ESTE:</td>
-            <td>{{ $tramite->predio->colindante_este ?? 'N/A' }}</td>
+            <td>{{ $tramite->predio->getColindanciaString('ESTE') }}</td>
         </tr>
         <tr>
             <td>OESTE:</td>
-            <td>{{ $tramite->predio->colindante_oeste ?? 'N/A' }}</td>
+            <td>{{ $tramite->predio->getColindanciaString('OESTE') }}</td>
         </tr>
     </table>
 

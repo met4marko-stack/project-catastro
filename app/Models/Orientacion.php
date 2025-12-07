@@ -6,5 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 
 class Orientacion extends Model
 {
-    //
+    protected $table = 'orientaciones'; 
+    protected $guarded = []; 
 }

@@ -17,6 +17,9 @@ use App\Models\MaterialVia;
 use App\Models\Provincia;
 use App\Models\CentroPoblado;
 use App\Models\PropietarioPredioEstado;
+use App\Models\Orientacion;
+use App\Models\TipoColindante;
+use App\Models\PredioColindancia;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -777,10 +780,10 @@ class TramiteController extends Controller
                     'manzano' => $predioSeleccionado->manzano,
                     'superficie' => $predioSeleccionado->sup_levantamiento, // Asumimos sup. levantamiento
                     
-                    'col_norte' => $predioSeleccionado->colindante_norte ?? 'S/N',
-                    'col_sur' => $predioSeleccionado->colindante_sur ?? 'S/N',
-                    'col_este' => $predioSeleccionado->colindante_este ?? 'S/N',
-                    'col_oeste' => $predioSeleccionado->colindante_oeste ?? 'S/N',
+                    'col_norte' => $predioSeleccionado->getColindanciaString('NORTE'),
+                    'col_sur' => $predioSeleccionado->getColindanciaString('SUR'),
+                    'col_este' => $predioSeleccionado->getColindanciaString('ESTE'),
+                    'col_oeste' => $predioSeleccionado->getColindanciaString('OESTE'),
 
                     'propietario_id' => $predioSeleccionado->propietarios->first()->id ?? 0, // Referencia
                     'propietario_nombre' => $predioSeleccionado->propietarios->map(function($p) {
@@ -1007,11 +1010,6 @@ class TramiteController extends Controller
                     'sup_afectada' => $predioData['sup_afectada'] ?? 0,
                     'sup_util' => $predioData['sup_util'] ?? 0,
 
-                    'colindante_norte' => $predioData['colindante_norte'] ?? null,
-                    'colindante_sur' => $predioData['colindante_sur'] ?? null,
-                    'colindante_este' => $predioData['colindante_este'] ?? null,
-                    'colindante_oeste' => $predioData['colindante_oeste'] ?? null,
-
                     'frente_principal' => $predioData['frente_principal'] ?? 0,
                     'id_material_via' => $predioData['id_material_via'] ?? null,
                     'via_id' => $predioData['via_id'] ?? null,
@@ -1031,6 +1029,13 @@ class TramiteController extends Controller
                 // NOTA: Se han removido fotos y coordenadas para este flujo rápido.
 
                 $nuevoPredio = Predio::create($data);
+                
+                // Procesar y guardar colindancias normalizadas desde el texto
+                $this->procesarColindanciaTexto($nuevoPredio, 'NORTE', $predioData['colindante_norte'] ?? null);
+                $this->procesarColindanciaTexto($nuevoPredio, 'SUR', $predioData['colindante_sur'] ?? null);
+                $this->procesarColindanciaTexto($nuevoPredio, 'ESTE', $predioData['colindante_este'] ?? null);
+                $this->procesarColindanciaTexto($nuevoPredio, 'OESTE', $predioData['colindante_oeste'] ?? null);
+
                 $lotesGenerados[] = $nuevoPredio->codigo_catastral . " (" . $loteValor . ")";
 
                 // Asignar Propietarios
@@ -1071,5 +1076,65 @@ class TramiteController extends Controller
         $by = $b->getY();
 
         return (abs($ax - $bx) < $epsilon) && (abs($ay - $by) < $epsilon);
+    }
+
+    /**
+     * Procesa un texto de colindancia y crea los registros normalizados.
+     */
+    private function procesarColindanciaTexto(Predio $predio, string $nombreOrientacion, ?string $textoColindante)
+    {
+        if (empty($textoColindante)) return;
+
+        $orientacion = Orientacion::where('nombre', $nombreOrientacion)->first();
+        if (!$orientacion) return;
+
+        $tipos = TipoColindante::pluck('id', 'nombre');
+        $viasDb = Via::all(); 
+
+        $partes = preg_split('/\s+y\s+|\s*,\s*|\s+e\s+/i', $textoColindante, -1, PREG_SPLIT_NO_EMPTY);
+
+        foreach ($partes as $parte) {
+            $parte = trim($parte);
+            $tipoId = $tipos['OTRO'] ?? null; 
+            if (!$tipoId) $tipoId = TipoColindante::first()->id; // Fallback
+
+            $viaId = null;
+            $nombreONumero = $parte;
+
+            $parteUpper = strtoupper($parte);
+
+            if (str_starts_with($parteUpper, 'LOTE')) {
+                $tipoId = $tipos['LOTE'];
+                $nombreONumero = trim(preg_replace('/^LOTES?\s*/i', '', $parte));
+            } 
+            elseif (str_contains($parteUpper, 'CALLE') || str_contains($parteUpper, 'AV') || str_contains($parteUpper, 'PASAJE')) {
+                $tipoId = $tipos['VIA'];
+                $viaEncontrada = $viasDb->first(function($v) use ($parteUpper) {
+                    return str_contains($parteUpper, strtoupper($v->nombre)); 
+                });
+
+                if ($viaEncontrada) {
+                    $viaId = $viaEncontrada->id;
+                    $nombreONumero = null; 
+                }
+            }
+            elseif (str_contains($parteUpper, 'RIO')) {
+                $tipoId = $tipos['RIO'];
+            }
+            elseif (str_contains($parteUpper, 'AREA VERDE') || str_contains($parteUpper, 'PLAZA')) {
+                $tipoId = $tipos['AREA VERDE'];
+            }
+            elseif (str_contains($parteUpper, 'EQUIPAMIENTO')) {
+                $tipoId = $tipos['EQUIPAMIENTO'];
+            }
+
+            PredioColindancia::create([
+                'predio_id' => $predio->id,
+                'orientacion_id' => $orientacion->id,
+                'tipo_colindante_id' => $tipoId,
+                'via_id' => $viaId,
+                'nombre_o_numero' => $nombreONumero,
+            ]);
+        }
     }
 }

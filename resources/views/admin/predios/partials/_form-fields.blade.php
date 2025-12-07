@@ -110,29 +110,74 @@
             </div>
         </div>
 
-        <div class="card card-secondary">
+        <script src="//unpkg.com/alpinejs" defer></script>
+        
+        <div class="card card-secondary" x-data="colindanciasApp()">
             <div class="card-header">
-                <h3 class="card-title">3. Colindantes y Características</h3>
+                <h3 class="card-title">3. Colindancias y Características</h3>
             </div>
             <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6 form-group"><label>Colindante Norte</label><input type="text"
-                            name="colindante_norte"
-                            value="{{ old('colindante_norte', $predio->colindante_norte ?? '') }}"
-                            class="form-control"></div>
-                    <div class="col-md-6 form-group"><label>Colindante Sur</label><input type="text"
-                            name="colindante_sur" value="{{ old('colindante_sur', $predio->colindante_sur ?? '') }}"
-                            class="form-control"></div>
-                    <div class="col-md-6 form-group"><label>Colindante Este</label><input type="text"
-                            name="colindante_este"
-                            value="{{ old('colindante_este', $predio->colindante_este ?? '') }}"
-                            class="form-control"></div>
-                    <div class="col-md-6 form-group"><label>Colindante Oeste</label><input type="text"
-                            name="colindante_oeste"
-                            value="{{ old('colindante_oeste', $predio->colindante_oeste ?? '') }}"
-                            class="form-control"></div>
+                <label>Colindancias</label>
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm table-bordered">
+                        <thead class="thead-light">
+                            <tr>
+                                <th style="width: 20%">Orientación</th>
+                                <th style="width: 20%">Tipo</th>
+                                <th>Descripción (Vía o Nombre/Número)</th>
+                                <th style="width: 50px"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="(col, index) in colindancias" :key="index">
+                                <tr>
+                                    <td>
+                                        <select :name="'colindancias['+index+'][orientacion_id]'" class="form-control form-control-sm" x-model="col.orientacion_id" required>
+                                            <option value="">--</option>
+                                            @foreach($orientaciones as $o) <option value="{{$o->id}}">{{$o->nombre}}</option> @endforeach
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <select :name="'colindancias['+index+'][tipo_colindante_id]'" class="form-control form-control-sm" x-model="col.tipo_colindante_id" required>
+                                            <option value="">--</option>
+                                            @foreach($tiposColindante as $t) <option value="{{$t->id}}">{{$t->nombre}}</option> @endforeach
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <!-- Input condicional -->
+                                        <template x-if="col.tipo_colindante_id == '{{ $tiposColindante->firstWhere('nombre', 'VIA')->id }}'">
+                                            <select :name="'colindancias['+index+'][via_id]'" class="form-control form-control-sm" x-model="col.via_id">
+                                                <option value="">-- Seleccione Vía --</option>
+                                                @foreach($vias as $v) <option value="{{$v->id}}">{{$v->nombre}}</option> @endforeach
+                                            </select>
+                                        </template>
+                                        <template x-if="col.tipo_colindante_id != '{{ $tiposColindante->firstWhere('nombre', 'VIA')->id }}'">
+                                            <input type="text" :name="'colindancias['+index+'][nombre_o_numero]'" class="form-control form-control-sm" x-model="col.nombre_o_numero" placeholder="Ej: 12, Rio...">
+                                        </template>
+                                    </td>
+                                    <td class="text-center">
+                                        <button type="button" class="btn btn-danger btn-xs" @click="remove(index)"><i class="fas fa-trash"></i></button>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    <button type="button" class="btn btn-success btn-sm" @click="add()"><i class="fas fa-plus"></i> Agregar Colindancia</button>
                 </div>
                 <hr>
+                <script>
+                    function colindanciasApp() {
+                        return {
+                            colindancias: {!! isset($predio) && $predio->exists ? $predio->colindancias->toJson() : '[]' !!},
+                            add() {
+                                this.colindancias.push({ orientacion_id: '', tipo_colindante_id: '', via_id: '', nombre_o_numero: '' });
+                            },
+                            remove(index) {
+                                this.colindancias.splice(index, 1);
+                            }
+                        }
+                    }
+                </script>
                 <div class="row">
                     <div class="col-md-4 form-group">
                         <label>Frente Principal (m)</label>

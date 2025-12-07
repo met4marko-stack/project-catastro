@@ -97,4 +97,33 @@ class Predio extends Model implements Auditable
     {
         return $this->belongsTo(CentroPoblado::class, 'centro_poblado_id');
     }
+
+    public function colindancias(): HasMany
+    {
+        return $this->hasMany(PredioColindancia::class);
+    }
+
+    /**
+     * Obtiene el string formateado de colindancias para una orientación dada.
+     */
+    public function getColindanciaString(string $orientacionNombre): string
+    {
+        $cols = $this->colindancias()
+            ->whereHas('orientacion', fn($q) => $q->where('nombre', $orientacionNombre))
+            ->with(['tipoColindante', 'via'])
+            ->get();
+
+        if ($cols->isEmpty()) return 'N/A';
+
+        return $cols->map(function ($col) {
+            if ($col->tipoColindante->nombre === 'VIA') {
+                return $col->via ? $col->via->nombre : $col->nombre_o_numero;
+            } elseif ($col->tipoColindante->nombre === 'LOTE') {
+                return 'LOTE ' . $col->nombre_o_numero;
+            } else {
+                // Para OTRO, RIO, etc.
+                return $col->tipoColindante->nombre . ' ' . $col->nombre_o_numero;
+            }
+        })->join(', ');
+    }
 }
