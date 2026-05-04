@@ -14,9 +14,17 @@ class RoleSeeder extends Seeder
      */
     public function run(): void
     {
-        $role = Role::firstOrCreate(['name' => 'Super-Admin']);
+        /*$role = Role::firstOrCreate(['name' => 'Super-Admin']);
         $permission = Permission::firstOrCreate(['name' => 'admin.ver-menu']);
         
-        $role->givePermissionTo($permission);
+        $role->givePermissionTo($permission);*/
+
+        app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+
+        // Crea los roles
+        Role::firstOrCreate(['name' => 'Super-Admin']);
+        Role::firstOrCreate(['name' => 'Admin-Municipal']);
+        Role::firstOrCreate(['name' => 'Asesor-Legal']);      
+        Role::firstOrCreate(['name' => 'Inspector-Tecnico']);
     }
 }

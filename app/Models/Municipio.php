@@ -9,4 +9,10 @@ class Municipio extends Model
 {
     /** @use HasFactory<\Database\Factories\MunicipioFactory> */
     use HasFactory;
+
+    protected $fillable = [
+        'nombre',
+        'departamento',
+        'logo', 
+    ];
 }

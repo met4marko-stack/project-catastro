@@ -114,6 +114,10 @@
                             @else
                             @endauth
                         @endif
+
+                        <a href="http://localhost/projectcatastro/public/consulta" class="btn btn-outline-light btn-custom">
+                            Consultar Trámite
+                        </a>
                     </div>
                 </div>
             </section>
@@ -124,3 +128,5 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
+
+

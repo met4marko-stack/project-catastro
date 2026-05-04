@@ -299,17 +299,77 @@ return [
     */
 
     'menu' => [
+        ['header' => 'ADMINISTRACIÓN'],
+
         [
             'text' => 'Municipios',
-            'url'  => 'admin/municipio',
+            'route'  => 'admin.municipios.index',
             'icon' => 'fas fa-fw fa-city',
-            'can'  => 'admin.ver-menu',
+            'can'  => 'ver-seccion-super-admin', // Permiso para Super-Admin
         ],
         [
             'text' => 'Usuarios',
-            'url'  => 'admin/usuario',
-            'icon' => 'fas fa-fw fa-user',
-            'can'  => 'admin.ver-menu',
+            'route'  => 'admin.usuarios.index',
+            'icon' => 'fas fa-fw fa-users',
+            'can'  => 'ver-seccion-admin-general', // Permiso para Super-Admin y Admin-Municipal
+        ],
+        [
+            'text' => 'Propietarios',
+            'route'  => 'admin.propietarios.index',
+            'icon' => 'fas fa-fw fa-id-card',
+            'can'  => 'ver-seccion-admin-municipal', // Permiso Admin-Municipal
+        ],
+        [
+            'text' => 'Predios',
+            'route'  => 'admin.predios.index',
+            'icon' => 'fas fa-fw fa-house-user', // Ícono de casa/propiedad
+            'can'  => 'ver-seccion-admin-municipal',
+        ],
+        [
+            'text' => 'Trámites',
+            'route'  => 'admin.tramites.index', // Asumimos que esta será la ruta principal
+            'icon' => 'fas fa-fw fa-file-signature', // Ícono para trámites/documentos
+            'can'  => 'gestionar-tramites',
+            //'can'  => 'ver-seccion-admin-municipal',
+        ],
+        [
+            'text' => 'Auditoría',
+            'route'  => 'admin.auditorias.index',
+            'icon' => 'fas fa-fw fa-clipboard-list',
+            'can'  => 'ver-seccion-admin-municipal', // Permiso Admin-Municipal
+        ],
+        [
+            'text' => 'Historial de Asignaciones',
+            'route'  => 'admin.asignaciones.index',
+            'icon' => 'fas fa-fw fa-history',
+            'can'  => 'ver-seccion-super-admin', // Permiso para Super-Admin
+        ],
+        [
+            'header' => 'GESTIÓN TERRITORIAL',
+            'can'  => 'ver-seccion-admin-municipal',
+        ],
+        [
+            'text'    => 'Planimetrías',
+            'icon'    => 'fas fa-fw fa-map-marked-alt',
+            'submenu' => [
+                [
+                    'text' => 'Visualización de Planimetrías',
+                    'route'  => 'admin.planimetrias.visualizacion',
+                    'icon' => 'far fa-fw fa-circle',
+                    'can'  => 'ver-seccion-admin-municipal',
+                ],
+            ],
+        ],
+        ['header' => 'CONFIGURACIÓN DE CUENTA'],
+        [
+            'text' => 'Mi Perfil',
+            'route'  => 'admin.profile.edit', // Esta ruta la crearemos en web.php
+            'icon' => 'fas fa-fw fa-user-edit',
+        ],
+        [
+            'text' => 'Seguridad (2FA)',
+            'route'  => '2fa.enable', // Apunta a la ruta para activar 2FA
+            'icon' => 'fas fa-fw fa-shield-alt',
         ],
     ],
 
@@ -349,7 +409,7 @@ return [
 
     'plugins' => [
         'Datatables' => [
-            'active' => false,
+            'active' => true,
             'files' => [
                 [
                     'type' => 'js',
@@ -369,7 +429,7 @@ return [
             ],
         ],
         'Select2' => [
-            'active' => false,
+            'active' => true,
             'files' => [
                 [
                     'type' => 'js',
@@ -384,7 +444,7 @@ return [
             ],
         ],
         'Chartjs' => [
-            'active' => false,
+            'active' => true,
             'files' => [
                 [
                     'type' => 'js',
@@ -394,7 +454,7 @@ return [
             ],
         ],
         'Sweetalert2' => [
-            'active' => false,
+            'active' => true,
             'files' => [
                 [
                     'type' => 'js',
