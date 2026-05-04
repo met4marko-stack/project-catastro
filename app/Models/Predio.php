@@ -19,7 +19,7 @@ class Predio extends Model implements Auditable
     use HasFactory, SoftDeletes, \OwenIt\Auditing\Auditable;
 
     protected $fillable = [
-        'inmueble_padre_id', 'propiedad_horizontal', 'numero_unidad', 'codigo_catastral',
+        'inmueble_padre_id', 'propiedad_horizontal', 'numero_unidad',
         'numero_plano', 'manzano', 'lote', 'provincia_id', 'centro_poblado_id', 'zona',
         'sup_levantamiento', 'sup_testimonio', 'sup_construida', 'sup_afectada', 'sup_util',
         'coordenadas', 'frente_principal', 'agua_potable', 'energia_electrica', 'alcantarillado',

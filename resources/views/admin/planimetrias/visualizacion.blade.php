@@ -55,28 +55,63 @@
 {{-- Importante: Incluir los estilos y scripts de Leaflet --}}
 @section('css')
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        /* Esto hará que el fondo vacío sea blanco y no gris */
+        #map { background-color: #ffffff; }
+    </style>
 @stop
+
 
 @section('js')
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    {{-- SweetAlert2 para las alertas --}}
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // 1. Opciones de GeoServer
-            const geoserverUrl = 'http://localhost:8080/geoserver/wms'; // Reemplaza con la URL de tu GeoServer
-            const workspace = 'projectcatastro'; // El workspace que creaste
+            // ---------------------------------------------------------
+            // 1. CONFIGURACIÓN INICIAL
+            // ---------------------------------------------------------
+            const geoserverUrl = 'http://localhost:8080/geoserver/wms'; 
+            const workspace = 'projectcatastro'; 
 
-            // 2. Inicializar el mapa centrado en La Paz
+            // Inicializar mapa
             const map = L.map('map', {
-                maxZoom: 22 // <-- AÑADIR: Permite hacer zoom hasta el nivel 22
+                maxZoom: 22 
             }).setView([-17.006974, -68.064169], 14);
 
-            // 3. Añadir una capa base (OpenStreetMap)
-            const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-                maxZoom: 22
-            }).addTo(map);
+            // ---------------------------------------------------------
+            // 2. DEFINICIÓN DE CAPAS BASE
+            // ---------------------------------------------------------
 
-            // 4. Definir las capas de GeoServer (Overlays)
+            // Opción A: Mapa Callejero (OpenStreetMap - El gris que tenías)
+            const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors',
+                maxZoom: 22
+            });
+
+            // Opción B: Google Satélite Híbrido (NUEVO - Fotos + Calles)
+            const googleHybrid = L.tileLayer('http://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}',{
+                maxZoom: 20,
+                subdomains:['mt0','mt1','mt2','mt3'],
+                attribution: 'Google Maps'
+            });
+
+            // Opción C: Tu Ortofoto Local (GeoServer)
+            const ortofotoLayer = L.tileLayer.wms(geoserverUrl, {
+                layers: `${workspace}:ortofoto_oficial_uno`, 
+                format: 'image/png', 
+                transparent: true,   
+                version: '1.1.0',
+                attribution: "Ortofoto Municipal - GAM",
+                maxZoom: 22
+            });
+
+            // ---------------------------------------------------------
+            // 3. CAPAS SUPERPUESTAS (Overlays)
+            // ---------------------------------------------------------
+            
+            // Capa de Predios
             const prediosLayer = L.tileLayer.wms(geoserverUrl, {
                 layers: `${workspace}:v_predios_map`,
                 format: 'image/png',
@@ -84,6 +119,7 @@
                 maxZoom: 22
             });
 
+            // Capa de Vías
             const ejesVialesLayer = L.tileLayer.wms(geoserverUrl, {
                 layers: `${workspace}:v_eje_via_map`,
                 format: 'image/png',
@@ -91,58 +127,79 @@
                 maxZoom: 22
             });
 
-            // 5. Crear objetos para el control de capas
+            // ---------------------------------------------------------
+            // 4. CONTROL DE CAPAS (Menú)
+            // ---------------------------------------------------------
+            
+            // Mapas Base (Radio Buttons - Elige uno)
             const baseMaps = {
-                "OpenStreetMap": osmLayer
+                "Mapa Callejero (OSM)": osmLayer,
+                "Satélite (Google)": googleHybrid, // <--- Aquí aparece la nueva opción
+                "Ortofoto Aérea (Local)": ortofotoLayer
             };
 
+            // Capas superpuestas (Checkboxes)
             const overlayMaps = {
-                "Predios": prediosLayer,
-                "Ejes Viales": ejesVialesLayer,
+                "Predios Catastrales": prediosLayer,
+                "Ejes de Vías": ejesVialesLayer,
             };
 
-            // 6. Añadir el control de capas al mapa
+            // Agregar el control al mapa
             L.control.layers(baseMaps, overlayMaps).addTo(map);
 
-            // Opcional: Añadir una capa por defecto al cargar el mapa
-            prediosLayer.addTo(map);
+            // ---------------------------------------------------------
+            // 5. INICIALIZACIÓN DE VISTA
+            // ---------------------------------------------------------
+            
+            // AQUÍ ELIGES CON QUÉ MAPA INICIAR:
+            // Si quieres que inicie con Satélite, usa googleHybrid.addTo(map);
+            // Si quieres el callejero gris, usa osmLayer.addTo(map);
+            
+            googleHybrid.addTo(map); // <--- Inicia directo con Satélite
+            
+            prediosLayer.addTo(map); // Capas vectoriales encima
 
-            ////////////////////////////////////////////////////////////
+            // ---------------------------------------------------------
+            // 6. LÓGICA DE BÚSQUEDA (Sin cambios)
+            // ---------------------------------------------------------
             const searchInput = document.getElementById('search-catastral-input');
             const searchBtn = document.getElementById('search-catastral-btn');
             const infoContainer = document.getElementById('predio-info');
-            let highlightLayer = null; // Variable para guardar la capa de resaltado
+            let highlightLayer = null; 
 
             const buscarPredio = () => {
-                const codigoCatastral = searchInput.value;
+                const codigoCatastral = searchInput.value.trim();
+                
                 if (!codigoCatastral) {
                     Swal.fire('Atención', 'Por favor, ingrese un Código Catastral.', 'warning');
                     return;
                 }
 
-                // Limpiar UI
                 if (highlightLayer) map.removeLayer(highlightLayer);
                 infoContainer.style.display = 'none';
 
                 fetch(`{{ route('admin.predios.buscar') }}?codigo_catastral=${codigoCatastral}`)
                     .then(response => {
-                        if (!response.ok) throw new Error('Código no encontrado');
+                        if (!response.ok) throw new Error('Predio no encontrado');
                         return response.json();
                     })
                     .then(response => {
                         const { geometry, data } = response;
 
-                        // 1. Dibujar y centrar en el mapa
                         const shapeLayer = L.geoJSON(geometry);
                         map.fitBounds(shapeLayer.getBounds(), { maxZoom: 19 });
 
                         highlightLayer = L.geoJSON(geometry, {
-                            style: { color: '#ff0000', weight: 3, fillOpacity: 0.3 }
+                            style: { 
+                                color: '#FFFF00', 
+                                weight: 4, 
+                                fillOpacity: 0.1,
+                                opacity: 0.8
+                            }
                         }).addTo(map);
 
-                        // 2. Mostrar datos del predio
                         document.getElementById('info-codigo').textContent = data.codigo_catastral || 'S/D';
-                        document.getElementById('info-propietario').textContent = data.propietarios || 'Sin propietarios registrados';
+                        document.getElementById('info-propietario').textContent = data.propietarios || 'Sin registro';
                         document.getElementById('info-ubicacion').textContent = 
                             `${data.zona || ''} / Mz: ${data.manzano || '-'} / Lt: ${data.lote || '-'}`;
                         document.getElementById('info-superficie').textContent = 
@@ -150,22 +207,19 @@
                         
                         infoContainer.style.display = 'block';
 
-                        // Opcional: Quitar resaltado después de un tiempo
                         setTimeout(() => {
                             if (highlightLayer) map.removeLayer(highlightLayer);
                         }, 10000);
                     })
                     .catch(error => {
-                        Swal.fire('Error', 'No se pudo encontrar el predio con ese código.', 'error');
+                        console.error(error);
+                        Swal.fire('No encontrado', 'No existe un predio con ese código catastral.', 'error');
                     });
             };
 
-            // Event Listeners
             searchBtn.addEventListener('click', buscarPredio);
             searchInput.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    buscarPredio();
-                }
+                if (e.key === 'Enter') buscarPredio();
             });
         });
     </script>

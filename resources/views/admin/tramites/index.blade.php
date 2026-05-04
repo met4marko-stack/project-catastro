@@ -5,21 +5,14 @@
 @section('plugins.Datatables', true)
 
 @section('content_header')
-    <h1><b>Gestión de Trámites</b></h1>
+    <h1><b>Gestión de Trámites {{ $estadoFilter !== 'todos' ? '- ' . strtoupper($estadoFilter) : '' }}</b></h1>
 @stop
 
 @section('content')
     <div class="card">
-        <div class="card-header">
-            <ul class="nav nav-tabs card-header-tabs">
-                <li class="nav-item">
-                    <a class="nav-link active" href="#" data-status="active">Activos</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="#" data-status="inactive">Archivados</a>
-                </li>
-            </ul>
-            <div class="card-tools">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h3 class="card-title">Lista de Registros</h3>
+            <div class="card-tools ml-auto">
                 <a href="{{ route('admin.tramites.create') }}" class="btn btn-primary">
                     <i class="fas fa-plus"></i> Iniciar Nuevo Trámite
                 </a>
@@ -58,7 +51,9 @@
                 ajax: {
                     url: "{{ route('admin.tramites.index') }}",
                     data: function(d) {
-                        d.status = $('.nav-tabs .nav-link.active').data('status') || 'active';
+                        // Leer el parámetro 'estado' de la barra de direcciones del navegador
+                        const urlParams = new URLSearchParams(window.location.search);
+                        d.estado = urlParams.get('estado') || 'todos';
                     }
                 },
                 columns: [
@@ -73,13 +68,6 @@
                 ],
                 language: { "url": "//cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json" },
                 order: [[5, "desc"]]
-            });
-
-            $('.nav-tabs a').on('click', function(e) {
-                e.preventDefault();
-                $('.nav-tabs .nav-link').removeClass('active');
-                $(this).addClass('active');
-                table.ajax.reload();
             });
 
             @if(session('success'))

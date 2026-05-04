@@ -299,8 +299,76 @@ return [
     */
 
     'menu' => [
-        ['header' => 'ADMINISTRACIÓN'],
+        ['header' => 'FLUJO DE TRÁMITES'],
 
+        [
+            'text'   => 'Todos los Trámites',
+            'url'    => 'admin/tramites?estado=todos',
+            'icon'   => 'fas fa-fw fa-list',
+            'active' => ['admin/tramites?estado=todos'],
+            'can'    => 'gestionar-tramites',
+        ],
+        [
+            'text'   => '1. Ingresados',
+            'url'    => 'admin/tramites?estado=ingresado',
+            'icon'   => 'fas fa-fw fa-inbox',
+            'active' => ['admin/tramites?estado=ingresado'],
+            'can'    => 'gestionar-tramites',
+        ],
+        [
+            'text'   => '2. En Revisión',
+            'url'    => 'admin/tramites?estado=revision',
+            'icon'   => 'fas fa-fw fa-search',
+            'active' => ['admin/tramites?estado=revision'],
+            'can'    => 'gestionar-tramites',
+        ],
+        [
+            'text'   => '3. En Inspección',
+            'url'    => 'admin/tramites?estado=inspeccion',
+            'icon'   => 'fas fa-fw fa-map-marked-alt',
+            'active' => ['admin/tramites?estado=inspeccion'],
+            'can'    => 'gestionar-tramites',
+        ],
+        [
+            'text'   => '4. Aprobados',
+            'url'    => 'admin/tramites?estado=aprobado',
+            'icon'   => 'fas fa-fw fa-check-circle',
+            'active' => ['admin/tramites?estado=aprobado'],
+            'can'    => 'gestionar-tramites',
+        ],
+        [
+            'text'   => '5. Entregados',
+            'url'    => 'admin/tramites?estado=entregado',
+            'icon'   => 'fas fa-fw fa-box-open',
+            'active' => ['admin/tramites?estado=entregado'],
+            'can'    => 'gestionar-tramites',
+        ],
+
+        // Estados de Excepción y Finalizados (Sin numeración y al final)
+        [
+            'text'   => 'Observados',
+            'url'    => 'admin/tramites?estado=observado',
+            'icon'   => 'fas fa-fw fa-exclamation-triangle',
+            'active' => ['admin/tramites?estado=observado'],
+            'can'    => 'gestionar-tramites',
+        ],
+        [
+            'text'   => 'Paralizados',
+            'url'    => 'admin/tramites?estado=paralizado',
+            'icon'   => 'fas fa-fw fa-hand-paper',
+            'active' => ['admin/tramites?estado=paralizado'],
+            'can'    => 'gestionar-tramites',
+        ],
+        [
+            'text'   => 'Archivados',
+            'url'    => 'admin/tramites?estado=archivado',
+            'icon'   => 'fas fa-fw fa-archive',
+            'active' => ['admin/tramites?estado=archivado'],
+            'can'    => 'gestionar-tramites',
+        ],
+
+        // A partir de aquí continúan los demás módulos
+        ['header' => 'ADMINISTRACIÓN'],
         [
             'text' => 'Municipios',
             'route'  => 'admin.municipios.index',
@@ -324,13 +392,6 @@ return [
             'route'  => 'admin.predios.index',
             'icon' => 'fas fa-fw fa-house-user', // Ícono de casa/propiedad
             'can'  => 'ver-seccion-admin-municipal',
-        ],
-        [
-            'text' => 'Trámites',
-            'route'  => 'admin.tramites.index', // Asumimos que esta será la ruta principal
-            'icon' => 'fas fa-fw fa-file-signature', // Ícono para trámites/documentos
-            'can'  => 'gestionar-tramites',
-            //'can'  => 'ver-seccion-admin-municipal',
         ],
         [
             'text' => 'Auditoría',
