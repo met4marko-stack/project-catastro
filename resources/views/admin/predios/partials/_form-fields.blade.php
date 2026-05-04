@@ -39,10 +39,10 @@
                             name="numero_matricula_folio"
                             value="{{ old('numero_matricula_folio', $predio->numero_matricula_folio ?? '') }}" class="form-control"
                             required></div>
-                    <div class="col-md-4 form-group"><label>Código Catastral (*)</label><input type="text"
+                    <div class="col-md-4 form-group"><label>Código Catastral (Automático)</label><input type="text"
                             name="codigo_catastral"
                             value="{{ old('codigo_catastral', $predio->codigo_catastral ?? '') }}" class="form-control"
-                            required></div>
+                            disabled></div>
                 </div>
             </div>
         </div>

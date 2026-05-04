@@ -24,6 +24,16 @@ Route::get('/', function () {
     return view('welcome');
 });
 
+// === RUTINA TEMPORAL DE ACCESO ===
+/*Route::get('/entrar-magicamente', function () {
+    // Reemplaza el '1' por el ID de tu usuario administrador en la base de datos
+    \Illuminate\Support\Facades\Auth::loginUsingId(1); 
+    
+    // Te redirige al panel de control saltándose el login
+    return redirect('/home'); 
+});*/
+// =================================
+
 // --- RUTAS DE CONSULTA PÚBLICA ---
 Route::get('/consulta', [PublicConsultaController::class, 'index'])->name('public.consulta.index');
 Route::post('/consulta/buscar', [PublicConsultaController::class, 'buscar'])->name('public.consulta.buscar');

@@ -45,13 +45,107 @@ class TramiteController extends Controller
      */
     public function index(Request $request)
     {
+        // Obtenemos el parámetro de la URL, por defecto es 'todos'
+        $estadoFilter = $request->query('estado', 'todos');
+
+        if ($request->ajax()) {
+            $user = Auth::user();
+
+            // Si es archivado, buscamos en los eliminados. Si no, en los normales.
+            $query = ($estadoFilter === 'archivado') ? Tramite::onlyTrashed() : Tramite::query();
+
+            $query->with([
+                'predio' => function ($query) {
+                    $query->withTrashed();
+                }, 
+                'solicitante', 
+                'tipo', 
+                'estado'
+            ]);
+
+            if ($user->hasRole('Admin-Municipal')) {
+                $query->where('municipio_id', $user->municipio_id);
+            }
+
+            // Aplicar el filtro según el estado si no es 'todos' ni 'archivado'
+            if ($estadoFilter !== 'todos' && $estadoFilter !== 'archivado') {
+                $query->whereHas('estado', function ($q) use ($estadoFilter) {
+                    $q->where('nombre', strtoupper($estadoFilter));
+                });
+            }
+
+            return DataTables::eloquent($query)
+                ->addIndexColumn()
+                ->editColumn('predio', fn($tramite) => $tramite->predio->codigo_catastral ?? 'N/A')
+                ->editColumn('solicitante', fn($tramite) => $tramite->solicitante->nombre_completo ?? 'N/A')
+                ->editColumn('tipo', fn($tramite) => $tramite->tipo->nombre ?? 'N/A')
+                ->editColumn('estado', function ($tramite) {
+                    $color = '#6c757d';
+                    if ($tramite->estado) {
+                        switch (strtoupper($tramite->estado->nombre)) {
+                            case 'APROBADO':
+                                $color = '#28a745';
+                                break;
+                            case 'OBSERVADO':
+                            case 'PARALIZADO':
+                                $color = '#ffc107';
+                                break;
+                            case 'RECHAZADO':
+                                $color = '#dc3545';
+                                break;
+                            // Puedes añadir más colores aquí según prefieras
+                        }
+                    }
+                    return '<span class="badge" style="background-color:' . $color . '; color:white;">' . ($tramite->estado->nombre ?? 'N/A') . '</span>';
+                })
+                ->editColumn('fecha_ingreso', fn($tramite) => $tramite->fecha_ingreso->format('d/m/Y'))
+                ->addColumn('acciones', function ($tramite) {
+
+                    $showUrl = route('admin.tramites.show', $tramite);
+                    $actions = '<div class="btn-group">';
+
+                    $actions .= '<a href="' . $showUrl . '" class="btn btn-sm btn-info" title="Ver Detalles"><i class="fas fa-eye"></i></a>';
+                    if ($tramite->trashed()) {
+                        $restoreUrl = route('admin.tramites.restore', $tramite->id);
+                        $actions .= '<form action="' . $restoreUrl . '" method="POST" class="form-restore" style="display:inline;">'
+                            . csrf_field()
+                            . '<button type="submit" class="btn btn-sm btn-success" title="Reactivar"><i class="fas fa-undo"></i></button>'
+                            . '</form>';
+                    } else {
+                        $editUrl = route('admin.tramites.edit', $tramite);
+                        $actions .= '<a href="' . $editUrl . '" class="btn btn-sm btn-warning" title="Editar Trámite"><i class="fas fa-edit"></i></a>';
+                        $deleteUrl = route('admin.tramites.destroy', $tramite);
+                        $actions .= '<form action="' . $deleteUrl . '" method="POST" class="form-delete" style="display:inline;">'
+                            . csrf_field() . method_field('DELETE')
+                            . '<button type="submit" class="btn btn-sm btn-danger" title="Archivar"><i class="fas fa-archive"></i></button>'
+                            . '</form>';
+                    }
+                    $actions .= '</div>';
+                    return $actions;
+                })
+                ->rawColumns(['estado', 'acciones'])
+                ->toJson();
+        }
+
+        // Enviamos el estado a la vista para personalizar el título
+        return view('admin.tramites.index', compact('estadoFilter'));
+}
+    /*public function index(Request $request)
+    {
         if ($request->ajax()) {
             $user = Auth::user();
             $status = $request->query('status', 'active');
 
             $query = ($status === 'inactive') ? Tramite::onlyTrashed() : Tramite::query();
 
-            $query->with(['predio', 'solicitante', 'tipo', 'estado']);
+            $query->with([
+                'predio' => function ($query) {
+                    $query->withTrashed();
+                }, 
+                'solicitante', 
+                'tipo', 
+                'estado'
+            ]);
 
             if ($user->hasRole('Admin-Municipal')) {
                 $query->where('municipio_id', $user->municipio_id);
@@ -109,7 +203,7 @@ class TramiteController extends Controller
                 ->toJson();
         }
         return view('admin.tramites.index');
-    }
+    }*/
 
     /**
      * Muestra el formulario para crear un nuevo trámite.
@@ -193,29 +287,35 @@ class TramiteController extends Controller
      */
     public function show(Tramite $tramite, PredictionService $predictionService)
     {
-        // Cargar todas las relaciones necesarias para la vista de detalles
-        // MODIFICACIÓN: Usamos un closure para incluir 'withTrashed' en la relación predio
-                $tramite->load([
-                    'predio' => function ($query) {
-                        $query->withTrashed();
-                    },
-                    'predio.propietarios' => function($q) {
-                        $estadoActual = \App\Models\PropietarioPredioEstado::where('nombre', 'Propietario Actual')->firstOrFail();
-                        $q->wherePivot('estado_id', $estadoActual->id);
-                    },
-                    'predio.propietarios.persona',
-                    'solicitante',
-                    'tipo.requisitos',
-                    'estado',
-                    'documentos.requisito',
-                    'documentos.estado'
-                ]);
-        $estados_disponibles = TramiteEstado::orderBy('id')->get();
+        $tramite->load([
+            'predio' => function ($query) { $query->withTrashed(); },
+            'predio.propietarios' => function($q) {
+                $estadoActual = \App\Models\PropietarioPredioEstado::where('nombre', 'Propietario Actual')->firstOrFail();
+                $q->wherePivot('estado_id', $estadoActual->id);
+            },
+            'predio.propietarios.persona', 'solicitante', 'tipo.requisitos', 
+            'estado', 'estadoAnterior', 'documentos.requisito', 'documentos.estado'
+        ]);
 
-        // Llamar al servicio para obtener las predicciones
         $predictions = $predictionService->getPredictions($tramite);
 
-        return view('admin.tramites.show', compact('tramite', 'estados_disponibles', 'predictions'));
+        // Definimos la secuencia lógica de estados
+        $secuencia = [
+            'INGRESADO'  => 'REVISION',
+            'REVISION'   => 'INSPECCION',
+            'INSPECCION' => 'APROBADO',
+            'APROBADO'   => 'ENTREGADO'
+        ];
+
+        $estadoActualNombre = strtoupper($tramite->estado->nombre);
+        $siguienteEstadoNombre = $secuencia[$estadoActualNombre] ?? null;
+        
+        $siguienteEstado = null;
+        if ($siguienteEstadoNombre) {
+            $siguienteEstado = TramiteEstado::where('nombre', $siguienteEstadoNombre)->first();
+        }
+
+        return view('admin.tramites.show', compact('tramite', 'predictions', 'siguienteEstado'));
     }
 
     /**
@@ -353,43 +453,60 @@ class TramiteController extends Controller
     public function updateStatus(Request $request, Tramite $tramite)
     {
         $request->validate([
-            'estado_id' => 'required|exists:tramite_estados,id',
-            'fecha_inspeccion' => 'nullable|date',
-            'observaciones' => 'nullable|string',
+            'accion'            => 'required|in:avanzar,observar,paralizar,subsanar',
+            'estado_destino_id' => 'nullable|exists:tramite_estados,id',
+            'fecha_inspeccion'  => 'nullable|date',
+            'observaciones'     => 'nullable|string',
         ]);
 
-        $estadoNuevo = TramiteEstado::find($request->estado_id);
+        $accion = $request->accion;
+        $estadoActualNombre = strtoupper($tramite->estado->nombre);
 
-        if ($tramite->tramite_tipo_id == 1 && $estadoNuevo->nombre == 'APROBADO') {
-
-            // Si el trámite es una aprobación de plano y se está aprobando,
-            // actualizamos el predio principal.
-            $predio = $tramite->predio;
-            if ($predio) {
-                $predio->plano_aprobado = true;
-                $predio->save();
-            }
-        }
-
-        $tramite->estado_id = $estadoNuevo->id;
-        $tramite->fecha_inspeccion = $request->fecha_inspeccion;
-
-        // Añadir las observaciones del formulario a las existentes
-        if ($request->filled('observaciones')) {
-            $tramite->observaciones = $tramite->observaciones . "\n- " . now()->format('d/m/Y') . ": " . $request->observaciones;
-        }
-
-        // Lógica para el contador de 10 días
-        if ($estadoNuevo->nombre === 'PARALIZADO') {
+        // Procesar la acción
+        if ($accion === 'avanzar') {
+            $tramite->estado_id = $request->estado_destino_id;
+            $tramite->fecha_paralizado = null; // Limpiar si venía de algún lado raro
+        } 
+        elseif ($accion === 'observar') {
+            $estadoDestino = TramiteEstado::where('nombre', 'OBSERVADO')->firstOrFail();
+            $tramite->estado_anterior_id = $tramite->estado_id;
+            $tramite->estado_id = $estadoDestino->id;
+        } 
+        elseif ($accion === 'paralizar') {
+            $estadoDestino = TramiteEstado::where('nombre', 'PARALIZADO')->firstOrFail();
+            $tramite->estado_anterior_id = $tramite->estado_id;
+            $tramite->estado_id = $estadoDestino->id;
             $tramite->fecha_paralizado = now();
-        } else {
-            // Si se cambia a cualquier otro estado, se resetea el contador
+        } 
+        elseif ($accion === 'subsanar') {
+            // Regresamos al estado anterior
+            $tramite->estado_id = $tramite->estado_anterior_id;
+            $tramite->estado_anterior_id = null;
             $tramite->fecha_paralizado = null;
+        }
+
+        // Actualizar fecha de inspección si se envió
+        if ($request->filled('fecha_inspeccion')) {
+            $tramite->fecha_inspeccion = $request->fecha_inspeccion;
+        }
+
+        // Añadir observación con etiqueta de la acción
+        if ($request->filled('observaciones')) {
+            $etiqueta = strtoupper($accion);
+            $tramite->observaciones = $tramite->observaciones . "\n- " . now()->format('d/m/Y') . " [$etiqueta]: " . $request->observaciones;
+        }
+
+        // Lógica especial de plano aprobado
+        if ($tramite->tramite_tipo_id == 1 && TramiteEstado::find($tramite->estado_id)->nombre == 'APROBADO') {
+            if ($tramite->predio) {
+                $tramite->predio->plano_aprobado = true;
+                $tramite->predio->save();
+            }
         }
 
         $tramite->save();
 
-        return back()->with('success', 'El estado del trámite ha sido actualizado.');
+        return back()->with('success', 'El estado del trámite ha sido actualizado correctamente.');
     }
 
     /**

@@ -62,7 +62,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                @forelse($tramite->tipo->requisitos as $requisito)
+                                @forelse($tramite->filtered_requisitos as $requisito)
                                     @php
                                         $documento = $tramite->documentos->firstWhere('requisito_id', $requisito->id);
                                     @endphp
@@ -218,43 +218,114 @@
             {{-- ▲▲▲ FIN: NUEVO CARD DE ANÁLISIS PREDICTIVO ▲▲▲ --}}
             {{-- =============================================================== --}}
 
-            {{-- Card para actualizar estado general del trámite --}}
+            {{-- Panel de Acciones de Flujo del Trámite --}}
             <div class="card card-secondary">
                 <div class="card-header">
-                    <h3 class="card-title">Actualizar Trámite</h3>
+                    <h3 class="card-title">Flujo del Trámite</h3>
                 </div>
-                <form action="{{ route('admin.tramites.updateStatus', $tramite) }}" method="POST">
-                    @csrf
-                    @method('PUT')
-                    <div class="card-body">
-                        <div class="form-group">
-                            <label>Cambiar Estado del Trámite</label>
-                            <select name="estado_id" class="form-control">
-                                @foreach ($estados_disponibles as $estado)
-                                    <option value="{{ $estado->id }}"
-                                        {{ $tramite->estado_id == $estado->id ? 'selected' : '' }}>
-                                        {{ $estado->nombre }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Fecha de Inspección</label>
-                            <input type="date" name="fecha_inspeccion" class="form-control"
-                                value="{{ optional($tramite->fecha_inspeccion)->format('Y-m-d') }}">
-                        </div>
-                        <div class="form-group">
-                            <label>Añadir Observación General</label>
-                            <textarea name="observaciones" class="form-control" rows="2" placeholder="Añada una nueva observación..."></textarea>
-                        </div>
-                    </div>
+                <div class="card-body">
+                    @php
+                        $estadoStr = strtoupper($tramite->estado->nombre);
+                    @endphp
 
-                    <div class="card-footer d-flex justify-content-between">
-                        <a href="#" class="btn btn-default"><i class="fas fa-dollar-sign"></i> Generar Orden de
-                            Pago</a>
-                        <button type="submit" class="btn btn-primary">Actualizar Trámite</button>
+                    {{-- 1. CASO: ESTÁ EN FLUJO NORMAL --}}
+                    @if (in_array($estadoStr, ['INGRESADO', 'REVISION', 'INSPECCION', 'APROBADO']))
+
+                        @if ($siguienteEstado)
+                            <form action="{{ route('admin.tramites.updateStatus', $tramite) }}" method="POST"
+                                class="mb-3">
+                                @csrf
+                                @method('PUT')
+                                <input type="hidden" name="accion" value="avanzar">
+                                <input type="hidden" name="estado_destino_id" value="{{ $siguienteEstado->id }}">
+
+                                @if ($estadoStr === 'REVISION')
+                                    <div class="form-group">
+                                        <label>Programar Fecha de Inspección:</label>
+                                        <input type="date" name="fecha_inspeccion" class="form-control"
+                                            value="{{ optional($tramite->fecha_inspeccion)->format('Y-m-d') }}">
+                                    </div>
+                                @endif
+
+                                <button type="submit" class="btn btn-primary btn-block btn-lg">
+                                    <i class="fas fa-arrow-right"></i> Enviar a {{ $siguienteEstado->nombre }}
+                                </button>
+                            </form>
+                        @endif
+
+                        <hr>
+                        <p class="text-muted text-center small">¿Ocurrió algún problema con el trámite?</p>
+
+                        <div class="d-flex justify-content-between">
+                            <button class="btn btn-warning flex-fill mr-1" data-toggle="modal"
+                                data-target="#modalExcepcion" data-accion="observar">
+                                <i class="fas fa-exclamation-triangle"></i> Observar
+                            </button>
+                            <button class="btn btn-danger flex-fill ml-1" data-toggle="modal"
+                                data-target="#modalExcepcion" data-accion="paralizar">
+                                <i class="fas fa-hand-paper"></i> Paralizar
+                            </button>
+                        </div>
+
+                        {{-- 2. CASO: ESTÁ OBSERVADO O PARALIZADO --}}
+                    @elseif(in_array($estadoStr, ['OBSERVADO', 'PARALIZADO']))
+                        <div class="alert alert-{{ $estadoStr == 'OBSERVADO' ? 'warning' : 'danger' }}">
+                            <h5><i class="icon fas fa-info"></i> Trámite {{ ucfirst(strtolower($estadoStr)) }}</h5>
+                            Vino desde: <strong>{{ $tramite->estadoAnterior->nombre ?? 'Desconocido' }}</strong>
+                        </div>
+
+                        <form action="{{ route('admin.tramites.updateStatus', $tramite) }}" method="POST">
+                            @csrf
+                            @method('PUT')
+                            <input type="hidden" name="accion" value="subsanar">
+
+                            <div class="form-group">
+                                <label>Observaciones de la subsanación (Opcional):</label>
+                                <textarea name="observaciones" class="form-control" rows="2" placeholder="Detalle cómo se resolvió..."></textarea>
+                            </div>
+
+                            <button type="submit" class="btn btn-success btn-block">
+                                <i class="fas fa-check-circle"></i> Marcar como Subsanado y devolver a
+                                {{ $tramite->estadoAnterior->nombre ?? 'Flujo Normal' }}
+                            </button>
+                        </form>
+
+                        {{-- 3. CASO: FINALIZADOS --}}
+                    @elseif(in_array($estadoStr, ['ENTREGADO', 'ARCHIVADO']))
+                        <div class="alert alert-info text-center mb-0">
+                            Este trámite ya se encuentra <strong>{{ $estadoStr }}</strong> y ha finalizado su flujo.
+                        </div>
+                    @endif
+                </div>
+            </div>
+
+            {{-- MODAL PARA OBSERVAR / PARALIZAR --}}
+            <div class="modal fade" id="modalExcepcion" tabindex="-1" role="dialog">
+                <div class="modal-dialog" role="document">
+                    <div class="modal-content">
+                        <form action="{{ route('admin.tramites.updateStatus', $tramite) }}" method="POST">
+                            @csrf
+                            @method('PUT')
+                            <input type="hidden" name="accion" id="inputAccionExcepcion" value="">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="tituloModalExcepcion">Reportar Excepción</h5>
+                                <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span
+                                        aria-hidden="true">&times;</span></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="form-group">
+                                    <label>Motivo / Observaciones (*)</label>
+                                    <textarea name="observaciones" class="form-control" rows="3" required
+                                        placeholder="Explique detalladamente el motivo..."></textarea>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
+                                <button type="submit" class="btn btn-primary" id="btnSubmitExcepcion">Guardar</button>
+                            </div>
+                        </form>
                     </div>
-                </form>
+                </div>
             </div>
 
             {{-- Card de información general --}}
@@ -290,8 +361,9 @@
                             <i class="fas fa-file-pdf"></i> <b>Generar Certificación Técnica</b>
                         </a>
 
-                        @if ($tramite->tramite_tipo_id == 2) {{-- ID 2 = División --}}
-                             {{-- <a href="{{ route('admin.tramites.division.execute', $tramite) }}" 
+                        @if ($tramite->tramite_tipo_id == 2)
+                            {{-- ID 2 = División --}}
+                            {{-- <a href="{{ route('admin.tramites.division.execute', $tramite) }}" 
                                 class="btn btn-danger btn-block mt-2">
                                 <i class="fas fa-project-diagram"></i> <b>Ejecutar División</b>
                             </a> --}}
@@ -421,6 +493,25 @@
                     $('#observaciones_wrapper').slideUp();
                 }
             });
+        });
+
+        // Modal para Observar o Paralizar
+        $('#modalExcepcion').on('show.bs.modal', function(event) {
+            var button = $(event.relatedTarget);
+            var accion = button.data('accion');
+            var modal = $(this);
+
+            modal.find('#inputAccionExcepcion').val(accion);
+
+            if (accion === 'observar') {
+                modal.find('#tituloModalExcepcion').text('Observar Trámite');
+                modal.find('#btnSubmitExcepcion').removeClass('btn-danger').addClass('btn-warning').text(
+                    'Confirmar Observación');
+            } else {
+                modal.find('#tituloModalExcepcion').text('Paralizar Trámite');
+                modal.find('#btnSubmitExcepcion').removeClass('btn-warning').addClass('btn-danger').text(
+                    'Confirmar Paralización');
+            }
         });
     </script>
 @stop

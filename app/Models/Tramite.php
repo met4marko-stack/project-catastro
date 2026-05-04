@@ -45,6 +45,7 @@ class Tramite extends Model implements Auditable
         'observaciones',
         'fecha_paralizado',
         'ruta_certificado',
+        'estado_anterior_id',
     ];
 
     protected $casts = [
@@ -91,6 +92,11 @@ class Tramite extends Model implements Auditable
         return $this->hasMany(TramiteDocumento::class);
     }
 
+    public function estadoAnterior(): BelongsTo
+    {
+        return $this->belongsTo(TramiteEstado::class, 'estado_anterior_id');
+    }
+
     // --- ACCESOR (LÓGICA DE APODERADO) ---
 
     /**
@@ -107,5 +113,22 @@ class Tramite extends Model implements Auditable
 
         // Compara si el ID del solicitante NO está en la lista de IDs de propietarios.
         return !in_array($this->solicitante_id, $propietarioIds);
+    }
+
+    /**
+     * Obtiene los requisitos filtrados según si es propietario o apoderado.
+     */
+    public function getFilteredRequisitosAttribute()
+    {
+        $requisitos = $this->tipo->requisitos;
+
+        // Si NO es realizado por apoderado (es decir, es el propietario), filtramos los requisitos 4 y 21.
+        if (!$this->es_realizado_por_apoderado) {
+            $requisitos = $requisitos->filter(function ($requisito) {
+                return !in_array($requisito->id, [4, 21]);
+            });
+        }
+
+        return $requisitos;
     }
 }

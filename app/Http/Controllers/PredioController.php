@@ -130,7 +130,6 @@ class PredioController extends Controller
             'inmueble_padre_id' => 'nullable|integer|exists:predios,id',
             'propiedad_horizontal' => 'nullable|boolean',
             'numero_unidad' => 'nullable|string|max:20|required_with:inmueble_padre_id',
-            'codigo_catastral' => 'required|string|max:255|unique:predios,codigo_catastral',
             'numero_matricula_folio' => 'required|string|max:255',
             'numero_plano' => 'nullable|string|max:50',
 
@@ -187,7 +186,7 @@ class PredioController extends Controller
             DB::beginTransaction();
 
             // 1. Prepara los datos del predio
-            $data = $request->except(['propietarios', 'colindancias', 'coordenadas_text', '_token', '_method', 'fotografia_uno', 'fotografia_dos', 'fotografia_tres', 'fotografia_cuatro', 'fotografia_cinco']);
+            $data = $request->except(['propietarios', 'colindancias', 'coordenadas_text', 'codigo_catastral', '_token', '_method', 'fotografia_uno', 'fotografia_dos', 'fotografia_tres', 'fotografia_cuatro', 'fotografia_cinco']);
 
             $data['municipio_id'] = Auth::user()->hasRole('Admin-Municipal') ? Auth::user()->municipio_id : $request->municipio_id;
 
@@ -261,6 +260,13 @@ class PredioController extends Controller
             }
             DB::commit();
             return redirect()->route('admin.predios.index')->with('success', 'Predio registrado exitosamente.');
+        } catch (\Illuminate\Database\QueryException $e) {
+            DB::rollBack();
+            // Código 23505 = Unique violation en PostgreSQL
+            if ($e->getCode() == '23505') {
+                return back()->withInput()->withErrors(['error' => 'No se pudo registrar: El Código Catastral resultante (01-Manzano-Lote) ya existe en el sistema. Verifique que la combinación de Manzano y Lote no esté duplicada.']);
+            }
+            return back()->withInput()->withErrors(['error' => 'Error de base de datos: ' . $e->getMessage()]);
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->withInput()->withErrors(['error' => 'Ocurrió un error al registrar el predio: ' . $e->getMessage()]);
@@ -318,7 +324,6 @@ class PredioController extends Controller
             'propiedad_horizontal' => 'nullable|boolean',
             'numero_unidad' => 'nullable|string|max:20|required_with:inmueble_padre_id',
             // La regla 'unique' debe ignorar el registro actual al actualizar
-            'codigo_catastral' => 'required|string|max:255|unique:predios,codigo_catastral,' . $predio->id,
             'numero_matricula_folio' => 'required|string|max:255',
             'numero_plano' => 'nullable|string|max:50',
 
@@ -377,7 +382,7 @@ class PredioController extends Controller
             DB::beginTransaction();
 
             // 1. Prepara los datos del predio
-            $data = $request->except(['propietarios', 'colindancias', 'coordenadas_text', '_token', '_method', 'fotografia_uno', 'fotografia_dos', 'fotografia_tres', 'fotografia_cuatro', 'fotografia_cinco']);
+            $data = $request->except(['propietarios', 'colindancias', 'coordenadas_text', 'codigo_catastral', '_token', '_method', 'fotografia_uno', 'fotografia_dos', 'fotografia_tres', 'fotografia_cuatro', 'fotografia_cinco']);
 
             // Formatear manzano y lote con ceros iniciales si es necesario
             $data['manzano'] = $this->formatManzanoLote($request->input('manzano'));
@@ -490,6 +495,13 @@ class PredioController extends Controller
 
             DB::commit();
             return redirect()->route('admin.predios.index')->with('success', 'Predio actualizado exitosamente.');
+        } catch (\Illuminate\Database\QueryException $e) {
+            DB::rollBack();
+            // Código 23505 = Unique violation en PostgreSQL
+            if ($e->getCode() == '23505') {
+                return back()->withInput()->withErrors(['error' => 'No se pudo actualizar: El Código Catastral resultante (Distrito-Manzano-Lote) ya existe en otro predio. Verifique los datos.']);
+            }
+            return back()->withInput()->withErrors(['error' => 'Error de base de datos: ' . $e->getMessage()]);
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->withInput()->withErrors(['error' => 'Ocurrió un error al actualizar el predio: ' . $e->getMessage()]);

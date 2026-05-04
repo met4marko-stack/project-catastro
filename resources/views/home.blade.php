@@ -141,7 +141,7 @@
             // !!! REEMPLAZA 'PROJECTCATASTRO:predios' con el nombre real de tu capa
             // !!! REEMPLAZA 'http://localhost:8080' si tu GeoServer está en otra URL
             var wmsLayer = L.tileLayer.wms('http://localhost:8080/geoserver/wms', {
-                layers: 'projectcatastro:predios', // <-- REEMPLAZA ESTO
+                layers: 'projectcatastro:predios', 
                 format: 'image/png',
                 transparent: true,
                 version: '1.1.0',
