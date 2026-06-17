@@ -64,8 +64,10 @@ Route::middleware(['auth', 'nocache'])->group(function () {
     // --- Rutas del Panel de Administración ---
     Route::prefix('admin')->name('admin.')->group(function () {
 
+        Route::post('ml/reentrenar', [\App\Http\Controllers\MLController::class, 'reentrenarModelo'])->name('ml.reentrenar');
         Route::get('perfil', [ProfileController::class, 'edit'])->name('profile.edit');
         Route::put('perfil', [ProfileController::class, 'update'])->name('profile.update');
+
 
         // Módulo de Municipios: accesible SOLO para Super-Admin
         Route::resource('municipios', MunicipioController::class)
@@ -138,6 +140,8 @@ Route::middleware(['auth', 'nocache'])->group(function () {
             Route::post('tramites/{tramite}/add-documento', [TramiteController::class, 'addDocumento'])->name('tramites.addDocumento');
             // --- RUTA PARA VER/DESCARGAR UN DOCUMENTO ---
             Route::get('tramites/documento/{documentoId}', [TramiteController::class, 'verDocumento'])->name('tramites.verDocumento');
+            // --- RUTA AÑADIDA PARA CONSULTAR EL ESTADO DEL DOCUMENTO (POLLING IA) ---
+            Route::get('tramites/documentos/{id}/status', [TramiteController::class, 'checkDocumentoStatus'])->name('tramites.documentos.status');
             // Ruta para actualizar el estado o fechas de un trámite
             Route::put('tramites/{tramite}/update-status', [TramiteController::class, 'updateStatus'])->name('tramites.updateStatus');
             // --- RUTA PARA ACTUALIZAR EL ESTADO DE UN DOCUMENTO ESPECÍFICO ---

@@ -68,7 +68,7 @@ class PredictionService
                 // --- Factores Comunes (para ambos modelos) ---
                 'tipo_tramite_id' => $tramite->tramite_tipo_id,
                 'cantidad_propietarios' => $predio->propietarios->count(),
-                'es_prop_horizontal' => (int)$predio->es_prop_horizontal, // Convertir a 0 o 1
+                'es_prop_horizontal' => $predio->propiedad_horizontal ? 1 : 0,
                 'servicios_basicos_count' => $serviciosCount,
                 'superficie_levantamiento' => $predio->sup_levantamiento ?? 0,
                 

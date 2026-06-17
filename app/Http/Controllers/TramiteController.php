@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\PredictionService;
+use App\Jobs\ValidarDocumentoIA;
 
 use App\Models\Predio;
 use App\Models\Tramite;
@@ -26,7 +27,7 @@ use Illuminate\Support\Facades\DB;
 use Yajra\DataTables\Facades\DataTables;
 use App\Models\DocumentoEstado;
 use App\Models\TramiteDocumento;
-use Illuminate\Support\Facades\Storage; 
+use Illuminate\Support\Facades\Storage;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
 use App\Models\Requisito;
@@ -57,9 +58,9 @@ class TramiteController extends Controller
             $query->with([
                 'predio' => function ($query) {
                     $query->withTrashed();
-                }, 
-                'solicitante', 
-                'tipo', 
+                },
+                'solicitante',
+                'tipo',
                 'estado'
             ]);
 
@@ -93,7 +94,7 @@ class TramiteController extends Controller
                             case 'RECHAZADO':
                                 $color = '#dc3545';
                                 break;
-                            // Puedes añadir más colores aquí según prefieras
+                                // Puedes añadir más colores aquí según prefieras
                         }
                     }
                     return '<span class="badge" style="background-color:' . $color . '; color:white;">' . ($tramite->estado->nombre ?? 'N/A') . '</span>';
@@ -129,7 +130,7 @@ class TramiteController extends Controller
 
         // Enviamos el estado a la vista para personalizar el título
         return view('admin.tramites.index', compact('estadoFilter'));
-}
+    }
     /*public function index(Request $request)
     {
         if ($request->ajax()) {
@@ -288,13 +289,20 @@ class TramiteController extends Controller
     public function show(Tramite $tramite, PredictionService $predictionService)
     {
         $tramite->load([
-            'predio' => function ($query) { $query->withTrashed(); },
-            'predio.propietarios' => function($q) {
+            'predio' => function ($query) {
+                $query->withTrashed();
+            },
+            'predio.propietarios' => function ($q) {
                 $estadoActual = \App\Models\PropietarioPredioEstado::where('nombre', 'Propietario Actual')->firstOrFail();
                 $q->wherePivot('estado_id', $estadoActual->id);
             },
-            'predio.propietarios.persona', 'solicitante', 'tipo.requisitos', 
-            'estado', 'estadoAnterior', 'documentos.requisito', 'documentos.estado'
+            'predio.propietarios.persona',
+            'solicitante',
+            'tipo.requisitos',
+            'estado',
+            'estadoAnterior',
+            'documentos.requisito',
+            'documentos.estado'
         ]);
 
         $predictions = $predictionService->getPredictions($tramite);
@@ -309,7 +317,7 @@ class TramiteController extends Controller
 
         $estadoActualNombre = strtoupper($tramite->estado->nombre);
         $siguienteEstadoNombre = $secuencia[$estadoActualNombre] ?? null;
-        
+
         $siguienteEstado = null;
         if ($siguienteEstadoNombre) {
             $siguienteEstado = TramiteEstado::where('nombre', $siguienteEstadoNombre)->first();
@@ -425,16 +433,63 @@ class TramiteController extends Controller
                     'nombre_original' => $file->getClientOriginalName(),
                     'user_id' => Auth::id(),
 
-                    'estado_id' => $estadoRecibido->id, 
+                    'estado_id' => $estadoRecibido->id,
 
                     'observaciones' => null,
                 ]
             );
 
+            $documentoGuardado = TramiteDocumento::updateOrCreate(
+                ['tramite_id' => $tramite->id, 'requisito_id' => $request->requisito_id],
+                [
+                    'ruta_archivo' => $newPath,
+                    'nombre_original' => $file->getClientOriginalName(),
+                    'user_id' => Auth::id(),
+                    'estado_id' => $estadoRecibido->id,
+                ]
+            );
+
+            // Asignamos la observación directamente para evitar el problema de $fillable
+            $documentoGuardado->observaciones = "Procesando validación automática...";
+            $documentoGuardado->save();
+
             // confirmar los cambios
             DB::commit();
 
-            return redirect()->back()->with('success', 'Documento subido exitosamente.');
+            // ----------------------------------------------------
+            // PREPARAR CONTEXTO Y ENVIAR A LA IA EN SEGUNDO PLANO
+            // ----------------------------------------------------
+            $predio = $tramite->predio;
+            // Tomamos el primer propietario actual (puedes ajustar esta lógica si hay múltiples)
+            $propietario = $predio->propietarios()->wherePivot('estado_id', \App\Models\PropietarioPredioEstado::where('nombre', 'Propietario Actual')->first()->id)->first();
+
+            $contexto = [
+                'matricula' => $predio->numero_matricula_folio ?? '',
+                'manzano'   => $predio->manzano ?? '',
+                'lote'      => $predio->lote ?? '',
+                'nombre'    => $propietario ? $propietario->persona->nombre_completo : '',
+                'ci'        => $propietario ? $propietario->persona->carnet : '',
+                'superficie' => $predio->sup_levantamiento ?? '',
+                'nombre_solicitante' => $tramite->solicitante->nombre_completo, 
+                'ci_solicitante' => $tramite->solicitante->carnet
+            ];
+
+            ValidarDocumentoIA::dispatch($documentoGuardado->id, $contexto);
+
+            // Si la petición es por AJAX (nuestro nuevo formulario), devolvemos JSON
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'documento_id' => $documentoGuardado->id,
+                    'observaciones' => $documentoGuardado->observaciones,
+                    'estado_id' => $estadoRecibido->id,
+                    'estado_nombre' => $estadoRecibido->nombre,
+                    'estado_color' => $estadoRecibido->color_ui ?? '#6c757d',
+                    'url_ver' => route('admin.tramites.verDocumento', $documentoGuardado->id)
+                ]);
+            }
+
+            return redirect()->back()->with('success', 'Documento subido exitosamente y enviado a validación automática .');
         } catch (\Exception $e) {
             // Si algo falló (el guardado del archivo o el guardado en BD)...
             DB::rollBack(); // Deshacer cualquier cambio en la base de datos
@@ -466,19 +521,16 @@ class TramiteController extends Controller
         if ($accion === 'avanzar') {
             $tramite->estado_id = $request->estado_destino_id;
             $tramite->fecha_paralizado = null; // Limpiar si venía de algún lado raro
-        } 
-        elseif ($accion === 'observar') {
+        } elseif ($accion === 'observar') {
             $estadoDestino = TramiteEstado::where('nombre', 'OBSERVADO')->firstOrFail();
             $tramite->estado_anterior_id = $tramite->estado_id;
             $tramite->estado_id = $estadoDestino->id;
-        } 
-        elseif ($accion === 'paralizar') {
+        } elseif ($accion === 'paralizar') {
             $estadoDestino = TramiteEstado::where('nombre', 'PARALIZADO')->firstOrFail();
             $tramite->estado_anterior_id = $tramite->estado_id;
             $tramite->estado_id = $estadoDestino->id;
             $tramite->fecha_paralizado = now();
-        } 
-        elseif ($accion === 'subsanar') {
+        } elseif ($accion === 'subsanar') {
             // Regresamos al estado anterior
             $tramite->estado_id = $tramite->estado_anterior_id;
             $tramite->estado_anterior_id = null;
@@ -581,7 +633,7 @@ class TramiteController extends Controller
                 break;
 
             case 5: //  ID 5 = Línea y Nivel
-                return redirect()->route('admin.tramites.lineaNivelForm', $tramite);                
+                return redirect()->route('admin.tramites.lineaNivelForm', $tramite);
             case 8: //  ID 8 = "Certificación Técnica Varia"
                 // Este tipo de trámite necesita un formulario previo.
                 return redirect()->route('admin.tramites.certificacionVariaForm', $tramite);
@@ -686,7 +738,7 @@ class TramiteController extends Controller
 
         // 2. Cargar los datos del trámite
         $tramite->load(['solicitante', 'predio']);
-        
+
         // --- Lógica de generación automática del Párrafo 1 ---
         Carbon::setLocale('es');
         $fechaSolicitud = Carbon::parse($tramite->fecha_ingreso)->isoFormat('D \d\e MMMM \d\e\l Y');
@@ -746,7 +798,7 @@ class TramiteController extends Controller
         }
 
         $tramite->load('solicitante', 'predio');
-        
+
         // Texto predeterminado para el párrafo 2
         $defaultParrafoDos = "Que el solicitante acredita su interés legal presentando en calidad de prueba: Testimonio Nº... de fecha...; el citado predio se encuentra registrado en DDRR. Bajo la matricula Nº... (Fotocopia simple y vigente); Plano de Lote Aprobado en Original y Fotocopia; Boleta de pago de Impuestos, etc.";
 
@@ -784,13 +836,13 @@ class TramiteController extends Controller
         // Cargar la vista del PDF
         $pdf = app('dompdf.wrapper');
         $pdf->loadView('admin.tramites.certificaciones.linea-nivel-pdf', $datos);
-        
+
         // Opcional: configurar el papel
         $pdf->setPaper('letter', 'portrait');
 
         // Generar un nombre de archivo
         $fileName = 'Cert_Linea_Nivel_' . $tramite->id . '.pdf';
-        
+
         // Mostrar el PDF en el navegador
         return $pdf->stream($fileName);
     }
@@ -837,13 +889,13 @@ class TramiteController extends Controller
         }
 
         $tramite->load('predio.propietarios.persona');
-        
+
         // Obtenemos los predios disponibles para seleccionar (excluyendo el original y eliminados)
         // Filtramos por el mismo municipio para evitar listas gigantes, y ordenamos por código
         $prediosDisponibles = Predio::where('municipio_id', $tramite->municipio_id)
-                                    ->where('id', '!=', $tramite->predio_id)
-                                    ->orderBy('codigo_catastral', 'desc')
-                                    ->get();
+            ->where('id', '!=', $tramite->predio_id)
+            ->orderBy('codigo_catastral', 'desc')
+            ->get();
 
         return view('admin.tramites.certificaciones.division-form', compact('tramite', 'prediosDisponibles'));
     }
@@ -857,7 +909,7 @@ class TramiteController extends Controller
             'testimonio_numero' => 'required|string|max:100',
             'testimonio_fecha' => 'required|date',
             'superficie_total' => 'required|numeric|min:0',
-            'incisos' => 'required|array|min:2', 
+            'incisos' => 'required|array|min:2',
             'incisos.*.predio_id' => 'required|exists:predios,id', // ID del predio seleccionado
             'incisos.*.denominativo' => 'required|string|max:100', // El "LOTE 4-A"
             'incisos.*.lote_nuevo' => 'required|string|max:100', // El número nuevo
@@ -880,11 +932,11 @@ class TramiteController extends Controller
             }, 'predio.propietarios.persona', 'predio.via', 'predio.provincia']);
 
             $incisosData = [];
-            
+
             foreach ($request->incisos as $incisoInput) {
                 // Cargar el predio seleccionado con sus relaciones, incluyendo los borrados
                 $predioSeleccionado = Predio::withTrashed()->with(['propietarios.persona'])->find($incisoInput['predio_id']);
-                
+
                 // Construir el array combinando datos del predio + inputs manuales
                 $incisosData[] = [
                     // Datos manuales
@@ -892,21 +944,21 @@ class TramiteController extends Controller
                     'lote_nuevo' => $incisoInput['lote_nuevo'], // Ej: "24"
                     'superficie_legal_porcentaje' => $incisoInput['superficie_legal_porcentaje'],
                     'superficie_util_porcentaje' => $incisoInput['superficie_util_porcentaje'],
-                    
+
                     // Datos extraídos automáticamente del predio seleccionado
                     'manzano' => $predioSeleccionado->manzano,
                     'superficie' => $predioSeleccionado->sup_levantamiento, // Asumimos sup. levantamiento
-                    
+
                     'col_norte' => $predioSeleccionado->getColindanciaString('NORTE'),
                     'col_sur' => $predioSeleccionado->getColindanciaString('SUR'),
                     'col_este' => $predioSeleccionado->getColindanciaString('ESTE'),
                     'col_oeste' => $predioSeleccionado->getColindanciaString('OESTE'),
 
                     'propietario_id' => $predioSeleccionado->propietarios->first()->id ?? 0, // Referencia
-                    'propietario_nombre' => $predioSeleccionado->propietarios->map(function($p) {
+                    'propietario_nombre' => $predioSeleccionado->propietarios->map(function ($p) {
                         return $p->persona->nombre_completo;
                     })->join(' y '),
-                    'propietario_ci' => $predioSeleccionado->propietarios->map(function($p) {
+                    'propietario_ci' => $predioSeleccionado->propietarios->map(function ($p) {
                         return $p->persona->carnet . ' ' . $p->persona->expedido;
                     })->join(' y '),
                 ];
@@ -919,7 +971,7 @@ class TramiteController extends Controller
                 'testimonio_numero' => $request->testimonio_numero,
                 'testimonio_fecha_formato' => Carbon::parse($request->testimonio_fecha)->locale('es')->isoFormat('D \d\e MMMM \d\e\l Y'),
                 'superficie_total' => $request->superficie_total,
-                'incisos' => $incisosData, 
+                'incisos' => $incisosData,
                 'fecha_actual_larga' => Carbon::now()->locale('es')->isoFormat('D \d\e MMMM \d\e\l Y'),
                 'img_escudo' => $this->getImageAsBase64(public_path('img/escudo_bolivia.png')),
                 'img_logo' => $this->getImageAsBase64(public_path('img/logo_catastro_ayoayo.png')),
@@ -930,7 +982,7 @@ class TramiteController extends Controller
             $pdf->loadView('admin.tramites.certificaciones.division-pdf', $datos);
             $pdf->setPaper('letter', 'portrait');
             $fileName = 'Resolucion_Division_' . $tramite->id . '.pdf';
-            
+
             // Guardar el PDF y actualizar la ruta_certificado del trámite
             $filePath = 'certificados_tramite/' . $tramite->id . '/' . $fileName;
             Storage::disk('public')->put($filePath, $pdf->output());
@@ -941,7 +993,6 @@ class TramiteController extends Controller
             DB::commit();
 
             return $pdf->stream($fileName);
-
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->withErrors('Error al generar el certificado de división: ' . $e->getMessage());
@@ -958,12 +1009,12 @@ class TramiteController extends Controller
         }
 
         $tramite->load('predio.propietarios.persona');
-        
+
         // Predios disponibles para seleccionar (como anexados o resultante)
         $prediosDisponibles = Predio::where('municipio_id', $tramite->municipio_id)
-                                    ->where('id', '!=', $tramite->predio_id)
-                                    ->orderBy('codigo_catastral', 'desc')
-                                    ->get();
+            ->where('id', '!=', $tramite->predio_id)
+            ->orderBy('codigo_catastral', 'desc')
+            ->get();
 
         return view('admin.tramites.certificaciones.fusion-form', compact('tramite', 'prediosDisponibles'));
     }
@@ -1008,7 +1059,7 @@ class TramiteController extends Controller
         // 3. Cargar datos para PDF
         // Recuperar información de los predios borrados para el reporte
         $predioBase = $tramite->predio()->withTrashed()->with('propietarios.persona')->first();
-        
+
         $prediosAnexados = Predio::withTrashed()
             ->with('propietarios.persona')
             ->whereIn('id', $request->predios_anexados)
@@ -1033,7 +1084,7 @@ class TramiteController extends Controller
         $pdf->loadView('admin.tramites.certificaciones.fusion-pdf', $datos);
         $pdf->setPaper('letter', 'portrait');
         $fileName = 'Resolucion_Fusion_' . $tramite->id . '.pdf';
-        
+
         // Guardar el PDF y actualizar la ruta_certificado del trámite
         $filePath = 'certificados_tramite/' . $tramite->id . '/' . $fileName;
         Storage::disk('public')->put($filePath, $pdf->output());
@@ -1069,15 +1120,15 @@ class TramiteController extends Controller
         $predioOriginal = $tramite->predio;
 
         return view('admin.tramites.division.execute', compact(
-            'tramite', 
+            'tramite',
             'predioOriginal',
-            'municipios', 
-            'planimetrias', 
-            'propietarios', 
-            'prediosPadre', 
-            'vias', 
-            'materialesVias', 
-            'provincias', 
+            'municipios',
+            'planimetrias',
+            'propietarios',
+            'prediosPadre',
+            'vias',
+            'materialesVias',
+            'provincias',
             'centrosPoblados'
         ));
     }
@@ -1105,7 +1156,7 @@ class TramiteController extends Controller
 
             // 1. Crear los nuevos predios
             foreach ($request->predios as $index => $predioData) {
-                
+
                 // Determinar el valor del lote: Si hay denominativo (ej. 4-A), se usa ese. Si no, el lote numérico.
                 $loteValor = !empty($predioData['denominativo']) ? $predioData['denominativo'] : ($predioData['lote'] ?? null);
 
@@ -1120,7 +1171,7 @@ class TramiteController extends Controller
                     'zona' => $predioData['zona'] ?? null,
                     'provincia_id' => $predioData['provincia_id'] ?? null,
                     'centro_poblado_id' => $predioData['centro_poblado_id'] ?? null,
-                    
+
                     'sup_levantamiento' => $predioData['sup_levantamiento'] ?? 0,
                     'sup_testimonio' => $predioData['sup_testimonio'] ?? 0,
                     'sup_construida' => $predioData['sup_construida'] ?? 0,
@@ -1146,7 +1197,7 @@ class TramiteController extends Controller
                 // NOTA: Se han removido fotos y coordenadas para este flujo rápido.
 
                 $nuevoPredio = Predio::create($data);
-                
+
                 // Procesar y guardar colindancias normalizadas desde el texto
                 $this->procesarColindanciaTexto($nuevoPredio, 'NORTE', $predioData['colindante_norte'] ?? null);
                 $this->procesarColindanciaTexto($nuevoPredio, 'SUR', $predioData['colindante_sur'] ?? null);
@@ -1167,7 +1218,7 @@ class TramiteController extends Controller
 
             // 2. Desactivar el Predio Original
             $predioOriginal = $tramite->predio;
-            $predioOriginal->delete(); 
+            $predioOriginal->delete();
 
             $tramite->observaciones .= "\n- División ejecutada el " . now()->format('d/m/Y') . ". Lotes creados: " . implode(", ", $lotesGenerados);
             $tramite->save();
@@ -1175,7 +1226,6 @@ class TramiteController extends Controller
             DB::commit();
 
             return redirect()->route('admin.tramites.show', $tramite)->with('success', 'División ejecutada correctamente. Nuevos predios creados: ' . count($lotesGenerados));
-
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->withInput()->withErrors(['error' => 'Error al ejecutar la división: ' . $e->getMessage()]);
@@ -1206,13 +1256,13 @@ class TramiteController extends Controller
         if (!$orientacion) return;
 
         $tipos = TipoColindante::pluck('id', 'nombre');
-        $viasDb = Via::all(); 
+        $viasDb = Via::all();
 
         $partes = preg_split('/\s+y\s+|\s*,\s*|\s+e\s+/i', $textoColindante, -1, PREG_SPLIT_NO_EMPTY);
 
         foreach ($partes as $parte) {
             $parte = trim($parte);
-            $tipoId = $tipos['OTRO'] ?? null; 
+            $tipoId = $tipos['OTRO'] ?? null;
             if (!$tipoId) $tipoId = TipoColindante::first()->id; // Fallback
 
             $viaId = null;
@@ -1223,25 +1273,21 @@ class TramiteController extends Controller
             if (str_starts_with($parteUpper, 'LOTE')) {
                 $tipoId = $tipos['LOTE'];
                 $nombreONumero = trim(preg_replace('/^LOTES?\s*/i', '', $parte));
-            } 
-            elseif (str_contains($parteUpper, 'CALLE') || str_contains($parteUpper, 'AV') || str_contains($parteUpper, 'PASAJE')) {
+            } elseif (str_contains($parteUpper, 'CALLE') || str_contains($parteUpper, 'AV') || str_contains($parteUpper, 'PASAJE')) {
                 $tipoId = $tipos['VIA'];
-                $viaEncontrada = $viasDb->first(function($v) use ($parteUpper) {
-                    return str_contains($parteUpper, strtoupper($v->nombre)); 
+                $viaEncontrada = $viasDb->first(function ($v) use ($parteUpper) {
+                    return str_contains($parteUpper, strtoupper($v->nombre));
                 });
 
                 if ($viaEncontrada) {
                     $viaId = $viaEncontrada->id;
-                    $nombreONumero = null; 
+                    $nombreONumero = null;
                 }
-            }
-            elseif (str_contains($parteUpper, 'RIO')) {
+            } elseif (str_contains($parteUpper, 'RIO')) {
                 $tipoId = $tipos['RIO'];
-            }
-            elseif (str_contains($parteUpper, 'AREA VERDE') || str_contains($parteUpper, 'PLAZA')) {
+            } elseif (str_contains($parteUpper, 'AREA VERDE') || str_contains($parteUpper, 'PLAZA')) {
                 $tipoId = $tipos['AREA VERDE'];
-            }
-            elseif (str_contains($parteUpper, 'EQUIPAMIENTO')) {
+            } elseif (str_contains($parteUpper, 'EQUIPAMIENTO')) {
                 $tipoId = $tipos['EQUIPAMIENTO'];
             }
 
@@ -1253,5 +1299,19 @@ class TramiteController extends Controller
                 'nombre_o_numero' => $nombreONumero,
             ]);
         }
+    }
+
+    public function checkDocumentoStatus($id)
+    {
+        $documento = TramiteDocumento::find($id);
+        if (!$documento) {
+            return response()->json(['error' => 'No encontrado'], 404);
+        }
+
+        return response()->json([
+            'observaciones' => $documento->observaciones,
+            // Si ya no dice "Procesando", asumimos que terminó
+            'terminado' => !str_contains($documento->observaciones, 'Procesando')
+        ]);
     }
 }

@@ -58,6 +58,7 @@
                                 <tr>
                                     <th>Requisito</th>
                                     <th style="width: 120px;">Estado</th>
+                                    <th>Validación / Observaciones</th>
                                     <th>Acciones</th>
                                 </tr>
                             </thead>
@@ -67,6 +68,7 @@
                                         $documento = $tramite->documentos->firstWhere('requisito_id', $requisito->id);
                                     @endphp
                                     <tr>
+                                        <tr id="req-row-{{ $requisito->id }}">
                                         <td>{{ $requisito->nombre }}</td>
                                         <td>
                                             @if ($documento)
@@ -79,6 +81,26 @@
                                                     style="font-size: 0.9em;">Pendiente</span>
                                             @endif
                                         </td>
+
+                                        {{-- CELDA PARA MOSTRAR LOS RESULTADOS DE PYTHON --}}
+                                        <td
+                                            @if ($documento) id="obs-doc-{{ $documento->id }}" data-doc-id="{{ $documento->id }}" class="doc-observacion" @endif>
+                                            @if ($documento && $documento->observaciones)
+                                                @if (str_contains($documento->observaciones, 'Procesando'))
+                                                    <span class="text-info small processing-spinner">
+                                                        <i class="fas fa-spinner fa-spin mr-1"></i>
+                                                        {{ $documento->observaciones }}
+                                                    </span>
+                                                @else
+                                                    <div
+                                                        style="font-size: 12px; background: #f4f6f9; border-left: 3px solid #17a2b8; padding: 8px; white-space: pre-wrap;">
+                                                        {{ $documento->observaciones }}</div>
+                                                @endif
+                                            @else
+                                                <span class="text-muted small">Sin observaciones</span>
+                                            @endif
+                                        </td>
+
                                         <td>
                                             @if ($documento)
                                                 <a href="{{ route('admin.tramites.verDocumento', $documento->id) }}"
@@ -108,7 +130,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="3" class="text-center">Este tipo de trámite no tiene requisitos
+                                        <td colspan="4" class="text-center">Este tipo de trámite no tiene requisitos
                                             definidos.</td>
                                     </tr>
                                 @endforelse
@@ -441,16 +463,50 @@
 
 @section('js')
     <script>
-        // Pasamos los datos de PHP a JavaScript de forma segura
         const todosLosDocumentoEstados = @json(App\Models\DocumentoEstado::all(['id', 'nombre']));
 
+        function iniciarPolling(docId, celdaObservaciones) {
+            let intervalo = setInterval(function() {
+                $.ajax({
+                    url: `/admin/tramites/documentos/${docId}/status`,
+                    type: 'GET',
+                    cache: false, 
+                    success: function(data) {
+                        if (data.terminado) {
+                            clearInterval(intervalo); 
+                            let html = `<div style="font-size: 12px; background: #f4f6f9; border-left: 3px solid #17a2b8; padding: 8px; white-space: pre-wrap;">${data.observaciones}</div>`;
+                            celdaObservaciones.html(html);
+                        }
+                    },
+                    error: function() {
+                        clearInterval(intervalo);
+                    }
+                });
+            }, 3000); 
+        }
+
         $(document).ready(function() {
-            // Lógica para el modal de SUBIDA
-            $('.btn-upload').on('click', function() {
+            
+            // 1. Iniciar polling para documentos que ya estaban "Procesando"
+            $('.doc-observacion').each(function() {
+                let cell = $(this);
+                if (cell.find('.processing-spinner').length > 0) {
+                    let docId = cell.data('doc-id');
+                    iniciarPolling(docId, cell);
+                }
+            });
+
+            // 2. Abrir Modal de Subida (Usando delegación de eventos para botones dinámicos)
+            $(document).on('click', '.btn-upload', function(e) {
+                e.preventDefault();
                 var requisitoId = $(this).data('requisito-id');
                 var requisitoNombre = $(this).data('requisito-nombre');
                 $('#requisito_id').val(requisitoId);
                 $('#requisito_nombre').text(requisitoNombre);
+                
+                $('#uploadModal form')[0].reset();
+                $('#uploadModal .custom-file-label').html('Elegir archivo...');
+                
                 $('#uploadModal').modal('show');
             });
 
@@ -459,14 +515,73 @@
                 $(this).next('.custom-file-label').html(fileName);
             });
 
-            // Lógica para el modal de CAMBIO DE ESTADO
-            $('.btn-change-status').on('click', function() {
+            // 3. ENVIAR FORMULARIO POR AJAX 
+            $('#uploadModal form').on('submit', function(e) {
+                e.preventDefault(); 
+                
+                let form = $(this);
+                let formData = new FormData(this);
+                let reqId = $('#requisito_id').val();
+                let btn = form.find('button[type="submit"]');
+                let reqNombre = $('#requisito_nombre').text();
+                
+                btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Subiendo...');
+
+                $.ajax({
+                    url: form.attr('action'),
+                    type: 'POST',
+                    data: formData,
+                    processData: false, 
+                    contentType: false, 
+                    success: function(response) {
+                        $('#uploadModal').modal('hide');
+                        btn.prop('disabled', false).text('Subir Documento');
+
+                        let row = $(`#req-row-${reqId}`);
+                        
+                        // Actualizar celda de Estado
+                        row.find('td:eq(1)').html(`<span class="badge" style="background-color: ${response.estado_color}; color: white; font-size: 0.9em;">${response.estado_nombre}</span>`);
+
+                        // Actualizar celda de Observaciones e iniciar polling
+                        let tdObs = row.find('td:eq(2)');
+                        tdObs.attr('id', 'obs-doc-' + response.documento_id);
+                        tdObs.attr('data-doc-id', response.documento_id);
+                        tdObs.addClass('doc-observacion');
+                        tdObs.html(`<span class="text-info small processing-spinner"><i class="fas fa-spinner fa-spin mr-1"></i> ${response.observaciones}</span>`);
+
+                        iniciarPolling(response.documento_id, tdObs);
+                        
+                        // ACTUALIZAR CELDA DE ACCIONES CON LOS NUEVOS BOTONES
+                        let tdAcciones = row.find('td:eq(3)');
+                        
+                        let btnVer = `<a href="${response.url_ver}" target="_blank" class="btn btn-xs btn-info" title="Ver Documento"><i class="fas fa-eye"></i> Ver</a>`;
+                        
+                        let btnRevisar = `<button class="btn btn-xs btn-default text-dark btn-change-status" data-documento-id="${response.documento_id}" data-estado-actual-id="${response.estado_id}" data-observaciones="${response.observaciones}" title="Cambiar Estado"><i class="fas fa-sync-alt"></i> Revisar</button>`;
+                        
+                        let btnReemplazar = `<button class="btn btn-xs btn-warning btn-upload" data-requisito-id="${reqId}" data-requisito-nombre="${reqNombre}" title="Reemplazar Documento"><i class="fas fa-upload"></i> Reemplazar</button>`;
+                        
+                        tdAcciones.html(`${btnVer} ${btnRevisar} ${btnReemplazar}`);
+
+                        $(document).Toasts('create', {
+                            class: 'bg-success',
+                            title: 'Éxito',
+                            body: 'Documento subido y en validación automática...'
+                        });
+                    },
+                    error: function(xhr) {
+                        btn.prop('disabled', false).text('Subir Documento');
+                        alert('Ocurrió un error al subir el archivo. Intente nuevamente.');
+                    }
+                });
+            });
+
+            // 4. LÓGICA PARA EL MODAL DE CAMBIO DE ESTADO (Delegación de eventos)
+            $(document).on('click', '.btn-change-status', function() {
                 var documentoId = $(this).data('documento-id');
                 var estadoActualId = $(this).data('estado-actual-id');
                 var observacionesActuales = $(this).data('observaciones');
 
-                var url =
-                    `{{ url('admin/tramites/' . $tramite->id . '/documentos') }}/${documentoId}/update-status`;
+                var url = `{{ url('admin/tramites/' . $tramite->id . '/documentos') }}/${documentoId}/update-status`;
                 $('#statusForm').attr('action', url);
 
                 var estadoSelect = $('#documento_estado_id');
@@ -481,7 +596,7 @@
                 estadoSelect.val(estadoActualId);
                 $('#observaciones').val(observacionesActuales);
 
-                estadoSelect.trigger('change'); // Simular cambio para mostrar/ocultar observaciones
+                estadoSelect.trigger('change');
                 $('#statusModal').modal('show');
             });
 
@@ -493,25 +608,23 @@
                     $('#observaciones_wrapper').slideUp();
                 }
             });
-        });
 
-        // Modal para Observar o Paralizar
-        $('#modalExcepcion').on('show.bs.modal', function(event) {
-            var button = $(event.relatedTarget);
-            var accion = button.data('accion');
-            var modal = $(this);
+            // 5. MODAL PARA OBSERVAR O PARALIZAR
+            $('#modalExcepcion').on('show.bs.modal', function(event) {
+                var button = $(event.relatedTarget);
+                var accion = button.data('accion');
+                var modal = $(this);
 
-            modal.find('#inputAccionExcepcion').val(accion);
+                modal.find('#inputAccionExcepcion').val(accion);
 
-            if (accion === 'observar') {
-                modal.find('#tituloModalExcepcion').text('Observar Trámite');
-                modal.find('#btnSubmitExcepcion').removeClass('btn-danger').addClass('btn-warning').text(
-                    'Confirmar Observación');
-            } else {
-                modal.find('#tituloModalExcepcion').text('Paralizar Trámite');
-                modal.find('#btnSubmitExcepcion').removeClass('btn-warning').addClass('btn-danger').text(
-                    'Confirmar Paralización');
-            }
+                if (accion === 'observar') {
+                    modal.find('#tituloModalExcepcion').text('Observar Trámite');
+                    modal.find('#btnSubmitExcepcion').removeClass('btn-danger').addClass('btn-warning').text('Confirmar Observación');
+                } else {
+                    modal.find('#tituloModalExcepcion').text('Paralizar Trámite');
+                    modal.find('#btnSubmitExcepcion').removeClass('btn-warning').addClass('btn-danger').text('Confirmar Paralización');
+                }
+            });
         });
     </script>
 @stop

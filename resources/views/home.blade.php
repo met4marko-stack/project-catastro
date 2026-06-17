@@ -40,6 +40,29 @@
 @stop
 
 @section('content')
+
+    {{-- ▼▼▼ NUEVA FILA: PANEL DE INTELIGENCIA ARTIFICIAL ▼▼▼ --}}
+    <div class="row">
+        <div class="col-12">
+            <div class="card card-outline card-primary">
+                <div class="card-header">
+                    <h3 class="card-title"><i class="fas fa-brain text-primary"></i> Motor de Inteligencia Artificial</h3>
+                </div>
+                <div class="card-body">
+                    <p>El modelo predictivo de Riesgo y Tiempos aprende de los trámites finalizados. Presiona el botón para exportar los datos más recientes y reentrenar el modelo.</p>
+                    
+                    <form id="form-reentrenar-ia" action="{{ route('admin.ml.reentrenar') }}" method="POST">
+                        @csrf
+                        <button type="button" class="btn btn-primary" onclick="confirmarReentrenamiento()">
+                            <i class="fas fa-sync-alt"></i> Reentrenar Modelo con Datos Actuales
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {{-- ▲▲▲ FIN PANEL IA ▲▲▲ --}}
+
     {{-- Fila de Gráfico de Tendencia --}}
     <div class="row">
         <div class="col-12">
@@ -73,6 +96,60 @@
 
 
 @section('js')
+    {{-- ▼▼▼ SCRIPT PARA EL BOTÓN DE REENTRENAMIENTO (SweetAlert2) ▼▼▼ --}}
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
+        function confirmarReentrenamiento() {
+            Swal.fire({
+                title: '¿Reentrenar Inteligencia Artificial?',
+                text: "El modelo actual se borrará y será reemplazado por lo aprendido de los trámites finalizados más recientes en la base de datos.",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#28a745', // Verde para acción positiva
+                cancelButtonColor: '#d33',
+                confirmButtonText: '<i class="fas fa-check"></i> Sí, reentrenar',
+                cancelButtonText: 'Cancelar'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    // Mostrar spinner de carga inbloqueable
+                    Swal.fire({
+                        title: 'Entrenando Inteligencia Artificial...',
+                        html: 'Extrayendo datos y calculando pesos neuronales.<br><b>Por favor, no cierres esta ventana ni recargues la página.</b>',
+                        allowOutsideClick: false,
+                        allowEscapeKey: false,
+                        didOpen: () => {
+                            Swal.showLoading();
+                        }
+                    });
+                    
+                    // Enviar el formulario
+                    document.getElementById('form-reentrenar-ia').submit();
+                }
+            });
+        }
+
+        // Mostrar alerta de éxito o error que viene desde el MLController
+        @if (session('success'))
+            Swal.fire({
+                icon: 'success',
+                title: '¡Éxito!',
+                text: '{{ session('success') }}',
+                confirmButtonColor: '#3085d6'
+            });
+        @endif
+
+        @if (session('error'))
+            Swal.fire({
+                icon: 'error',
+                title: 'Oops...',
+                text: '{{ session('error') }}',
+                confirmButtonColor: '#d33'
+            });
+        @endif
+    </script>
+    {{-- ▲▲▲ FIN SCRIPT IA ▲▲▲ --}}
+
+
     {{-- Scripts de Leaflet y Chart.js --}}
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
