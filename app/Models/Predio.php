@@ -13,25 +13,50 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Clickbar\Magellan\Data\Geometries\MultiPolygon;
 use App\Models\Via;
 use OwenIt\Auditing\Contracts\Auditable;
+use Illuminate\Support\Facades\DB;
 
 class Predio extends Model implements Auditable
 {
     use HasFactory, SoftDeletes, \OwenIt\Auditing\Auditable;
 
     protected $fillable = [
-        'inmueble_padre_id', 'propiedad_horizontal', 'numero_unidad',
-        'numero_plano', 'manzano', 'lote', 'provincia_id', 'centro_poblado_id', 'zona',
-        'sup_levantamiento', 'sup_testimonio', 'sup_construida', 'sup_afectada', 'sup_util',
-        'coordenadas', 'frente_principal', 'agua_potable', 'energia_electrica', 'alcantarillado',
-        'alumbrado_publico', 'gas_domiciliario',
+        'inmueble_padre_id',
+        'propiedad_horizontal',
+        'numero_unidad',
+        'numero_plano',
+        'manzano',
+        'lote',
+        'provincia_id',
+        'centro_poblado_id',
+        'zona',
+        'sup_levantamiento',
+        'sup_testimonio',
+        'sup_construida',
+        'sup_afectada',
+        'sup_util',
+        'coordenadas',
+        'frente_principal',
+        'agua_potable',
+        'energia_electrica',
+        'alcantarillado',
+        'alumbrado_publico',
+        'gas_domiciliario',
         'id_material_via',
         'via_id',
         'plano_aprobado',
         'forma_lote',
-        'fotografia_uno', 'fotografia_dos', 'fotografia_tres', 'fotografia_cuatro', 'fotografia_cinco',
-        'colindante_norte', 'colindante_sur', 'colindante_este', 'colindante_oeste',
-        'planimetria_id', 'municipio_id',
-        'numero_matricula_folio', 
+        'fotografia_uno',
+        'fotografia_dos',
+        'fotografia_tres',
+        'fotografia_cuatro',
+        'fotografia_cinco',
+        'colindante_norte',
+        'colindante_sur',
+        'colindante_este',
+        'colindante_oeste',
+        'planimetria_id',
+        'municipio_id',
+        'numero_matricula_folio',
     ];
 
     protected $casts = [
@@ -84,8 +109,8 @@ class Predio extends Model implements Auditable
     public function propietarios(): BelongsToMany
     {
         return $this->belongsToMany(Propietario::class, 'propietarios_predios')
-                    ->withPivot('estado_id', 'fecha_inicio', 'fecha_fin')
-                    ->withTimestamps();
+            ->withPivot('estado_id', 'fecha_inicio', 'fecha_fin')
+            ->withTimestamps();
     }
 
     public function provincia(): BelongsTo
@@ -125,5 +150,17 @@ class Predio extends Model implements Auditable
                 return $col->tipoColindante->nombre . ' ' . $col->nombre_o_numero;
             }
         })->join(', ');
+    }
+
+    public function getCoordenadasWktAttribute()
+    {
+        if (!$this->id || !$this->attributes['coordenadas']) {
+            return null;
+        }
+
+        return DB::table('predios')
+            ->where('id', $this->id)
+            ->selectRaw('ST_AsText(coordenadas) as wkt')
+            ->value('wkt');
     }
 }

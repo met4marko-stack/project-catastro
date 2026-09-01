@@ -40,7 +40,7 @@ class PredioController extends Controller
             $query = Predio::with([
                 'municipio',
                 'planimetria',
-                'propietarios' => function($q) use ($estadoActual) {
+                'propietarios' => function ($q) use ($estadoActual) {
                     $q->wherePivot('estado_id', $estadoActual->id);
                 },
                 'propietarios.persona',
@@ -215,7 +215,7 @@ class PredioController extends Controller
                 }
             }
 
-            if ($request->filled('coordenadas_text')) {
+            /*if ($request->filled('coordenadas_text')) {
                 $points = [];
                 $coordenadasArray = json_decode($request->input('coordenadas_text'), true);
                 foreach ($coordenadasArray as $coord) {
@@ -234,6 +234,21 @@ class PredioController extends Controller
                     // Envuelve el Polygon dentro de un MultiPolygon y asigna el SRID correcto
                     $data['coordenadas'] = new MultiPolygon([$polygon], 32719);
                 }
+            }*/
+
+            if ($request->filled('coordenadas')) {
+                $rawCoord = trim($request->input('coordenadas'));
+
+                // Si es Hex EWKB (empieza con 0106 o 0103)
+                if (str_starts_with($rawCoord, '0106') || str_starts_with($rawCoord, '0103')) {
+                    $data['coordenadas'] = DB::raw("'{$rawCoord}'");
+                } else {
+                    // Si es WKT (POLYGON o MULTIPOLYGON)
+                    // Se asegura el tipo MultiPolygon, 4D (ZM) y SRID 32719
+                    $data['coordenadas'] = DB::raw("ST_Multi(ST_Force4D(ST_SetSRID(ST_GeomFromText('{$rawCoord}'), 32719)))");
+                }
+            } else {
+                $data['coordenadas'] = null;
             }
             $predio = Predio::create($data);
 
@@ -263,9 +278,9 @@ class PredioController extends Controller
         } catch (\Illuminate\Database\QueryException $e) {
             DB::rollBack();
             // Código 23505 = Unique violation en PostgreSQL
-            if ($e->getCode() == '23505') {
+            /*if ($e->getCode() == '23505') {
                 return back()->withInput()->withErrors(['error' => 'No se pudo registrar: El Código Catastral resultante (01-Manzano-Lote) ya existe en el sistema. Verifique que la combinación de Manzano y Lote no esté duplicada.']);
-            }
+            }*/
             return back()->withInput()->withErrors(['error' => 'Error de base de datos: ' . $e->getMessage()]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -412,7 +427,7 @@ class PredioController extends Controller
             }
 
             // 3. Convierte el texto de coordenadas JSON a un objeto Polygon
-            if ($request->filled('coordenadas_text')) {
+            /*if ($request->filled('coordenadas_text')) {
                 $points = [];
                 $coordenadasArray = json_decode($request->input('coordenadas_text'), true);
                 foreach ($coordenadasArray as $coord) {
@@ -428,6 +443,21 @@ class PredioController extends Controller
                     $lineString = new LineString($points);
                     $data['coordenadas'] = new Polygon([$lineString], 4326);
                 }
+            }*/
+
+            if ($request->filled('coordenadas')) {
+                $rawCoord = trim($request->input('coordenadas'));
+
+                // Si es Hex EWKB (empieza con 0106 o 0103)
+                if (str_starts_with($rawCoord, '0106') || str_starts_with($rawCoord, '0103')) {
+                    $data['coordenadas'] = DB::raw("'{$rawCoord}'");
+                } else {
+                    // Si es WKT (POLYGON o MULTIPOLYGON)
+                    // Se asegura el tipo MultiPolygon, 4D (ZM) y SRID 32719
+                    $data['coordenadas'] = DB::raw("ST_Multi(ST_Force4D(ST_SetSRID(ST_GeomFromText('{$rawCoord}'), 32719)))");
+                }
+            } else {
+                $data['coordenadas'] = null;
             }
 
             // 4. Actualiza el predio
@@ -498,9 +528,9 @@ class PredioController extends Controller
         } catch (\Illuminate\Database\QueryException $e) {
             DB::rollBack();
             // Código 23505 = Unique violation en PostgreSQL
-            if ($e->getCode() == '23505') {
+            /*if ($e->getCode() == '23505') {
                 return back()->withInput()->withErrors(['error' => 'No se pudo actualizar: El Código Catastral resultante (Distrito-Manzano-Lote) ya existe en otro predio. Verifique los datos.']);
-            }
+            }*/
             return back()->withInput()->withErrors(['error' => 'Error de base de datos: ' . $e->getMessage()]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -667,7 +697,7 @@ PROMPT;
     {
         $request->validate(['codigo_catastral' => 'required|string|max:255']);
         $codigo = $request->input('codigo_catastral');
-        
+
         $predio = Predio::with(['municipio', 'propietarios.persona'])
             ->select(
                 'predios.*',
@@ -739,8 +769,8 @@ PROMPT;
 
         $predio->load(['propietarios' => function ($query) use ($estadoActual) {
             $query->where('propietarios.estado', true) // Estado del propietario (si está activo en el sistema)
-                  ->wherePivot('estado_id', $estadoActual->id) // Estado de la relación con el predio
-                  ->with('persona');
+                ->wherePivot('estado_id', $estadoActual->id) // Estado de la relación con el predio
+                ->with('persona');
         }]);
 
         $propietariosData = $predio->propietarios->map(function ($propietario) {

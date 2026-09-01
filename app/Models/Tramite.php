@@ -21,12 +21,12 @@ class Tramite extends Model implements Auditable
      */
     public function setEstadoIdAttribute($value)
     {
-        if ($value == 4 && is_null($this->attributes['fecha_conclusion'])) {
-            // 2. Establece la fecha de conclusión
+        if ($value == 6 && is_null($this->attributes['fecha_conclusion'])) {
+            // Establece la fecha de conclusión cuando el trámite pasa a ENTREGADO (ID 6)
             $this->attributes['fecha_conclusion'] = Carbon::now();
         }
 
-        // 3. Importante: Asigna el valor del estado_id
+        // Importante: Asigna el valor del estado_id
         $this->attributes['estado_id'] = $value;
     }
 

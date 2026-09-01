@@ -49,7 +49,7 @@ class TramiteController extends Controller
         // Obtenemos el parámetro de la URL, por defecto es 'todos'
         $estadoFilter = $request->query('estado', 'todos');
 
-        if ($request->ajax()) {
+        if ($request->ajax() || $request->wantsJson()) {
             $user = Auth::user();
 
             // Si es archivado, buscamos en los eliminados. Si no, en los normales.

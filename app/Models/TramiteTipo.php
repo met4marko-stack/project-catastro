@@ -16,6 +16,11 @@ class TramiteTipo extends Model
     protected $fillable = [
         'nombre',
         'descripcion',
+        'costo',
+    ];
+
+    protected $casts = [
+        'costo' => 'float',
     ];
 
     /**

@@ -37,8 +37,8 @@
                             value="{{ old('numero_plano', $predio->numero_plano ?? '') }}" class="form-control"></div>
                     <div class="col-md-4 form-group"><label>N° de Matrícula/Folio Real (*)</label><input type="text"
                             name="numero_matricula_folio"
-                            value="{{ old('numero_matricula_folio', $predio->numero_matricula_folio ?? '') }}" class="form-control"
-                            required></div>
+                            value="{{ old('numero_matricula_folio', $predio->numero_matricula_folio ?? '') }}"
+                            class="form-control" required></div>
                     <div class="col-md-4 form-group"><label>Código Catastral (Automático)</label><input type="text"
                             name="codigo_catastral"
                             value="{{ old('codigo_catastral', $predio->codigo_catastral ?? '') }}" class="form-control"
@@ -111,7 +111,7 @@
         </div>
 
         <script src="//unpkg.com/alpinejs" defer></script>
-        
+
         <div class="card card-secondary" x-data="colindanciasApp()">
             <div class="card-header">
                 <h3 class="card-title">3. Colindancias y Características</h3>
@@ -132,37 +132,54 @@
                             <template x-for="(col, index) in colindancias" :key="index">
                                 <tr>
                                     <td>
-                                        <select :name="'colindancias['+index+'][orientacion_id]'" class="form-control form-control-sm" x-model="col.orientacion_id" required>
+                                        <select :name="'colindancias[' + index + '][orientacion_id]'"
+                                            class="form-control form-control-sm" x-model="col.orientacion_id"
+                                            required>
                                             <option value="">--</option>
-                                            @foreach($orientaciones as $o) <option value="{{$o->id}}">{{$o->nombre}}</option> @endforeach
+                                            @foreach ($orientaciones as $o)
+                                                <option value="{{ $o->id }}">{{ $o->nombre }}</option>
+                                            @endforeach
                                         </select>
                                     </td>
                                     <td>
-                                        <select :name="'colindancias['+index+'][tipo_colindante_id]'" class="form-control form-control-sm" x-model="col.tipo_colindante_id" required>
+                                        <select :name="'colindancias[' + index + '][tipo_colindante_id]'"
+                                            class="form-control form-control-sm" x-model="col.tipo_colindante_id"
+                                            required>
                                             <option value="">--</option>
-                                            @foreach($tiposColindante as $t) <option value="{{$t->id}}">{{$t->nombre}}</option> @endforeach
+                                            @foreach ($tiposColindante as $t)
+                                                <option value="{{ $t->id }}">{{ $t->nombre }}</option>
+                                            @endforeach
                                         </select>
                                     </td>
                                     <td>
                                         <!-- Input condicional -->
-                                        <template x-if="col.tipo_colindante_id == '{{ $tiposColindante->firstWhere('nombre', 'VIA')->id }}'">
-                                            <select :name="'colindancias['+index+'][via_id]'" class="form-control form-control-sm" x-model="col.via_id">
+                                        <template
+                                            x-if="col.tipo_colindante_id == '{{ $tiposColindante->firstWhere('nombre', 'VIA')->id }}'">
+                                            <select :name="'colindancias[' + index + '][via_id]'"
+                                                class="form-control form-control-sm" x-model="col.via_id">
                                                 <option value="">-- Seleccione Vía --</option>
-                                                @foreach($vias as $v) <option value="{{$v->id}}">{{$v->nombre}}</option> @endforeach
+                                                @foreach ($vias as $v)
+                                                    <option value="{{ $v->id }}">{{ $v->nombre }}</option>
+                                                @endforeach
                                             </select>
                                         </template>
-                                        <template x-if="col.tipo_colindante_id != '{{ $tiposColindante->firstWhere('nombre', 'VIA')->id }}'">
-                                            <input type="text" :name="'colindancias['+index+'][nombre_o_numero]'" class="form-control form-control-sm" x-model="col.nombre_o_numero" placeholder="Ej: 12, Rio...">
+                                        <template
+                                            x-if="col.tipo_colindante_id != '{{ $tiposColindante->firstWhere('nombre', 'VIA')->id }}'">
+                                            <input type="text" :name="'colindancias[' + index + '][nombre_o_numero]'"
+                                                class="form-control form-control-sm" x-model="col.nombre_o_numero"
+                                                placeholder="Ej: 12, Rio...">
                                         </template>
                                     </td>
                                     <td class="text-center">
-                                        <button type="button" class="btn btn-danger btn-xs" @click="remove(index)"><i class="fas fa-trash"></i></button>
+                                        <button type="button" class="btn btn-danger btn-xs"
+                                            @click="remove(index)"><i class="fas fa-trash"></i></button>
                                     </td>
                                 </tr>
                             </template>
                         </tbody>
                     </table>
-                    <button type="button" class="btn btn-success btn-sm" @click="add()"><i class="fas fa-plus"></i> Agregar Colindancia</button>
+                    <button type="button" class="btn btn-success btn-sm" @click="add()"><i class="fas fa-plus"></i>
+                        Agregar Colindancia</button>
                 </div>
                 <hr>
                 <script>
@@ -170,7 +187,12 @@
                         return {
                             colindancias: {!! isset($predio) && $predio->exists ? $predio->colindancias->toJson() : '[]' !!},
                             add() {
-                                this.colindancias.push({ orientacion_id: '', tipo_colindante_id: '', via_id: '', nombre_o_numero: '' });
+                                this.colindancias.push({
+                                    orientacion_id: '',
+                                    tipo_colindante_id: '',
+                                    via_id: '',
+                                    nombre_o_numero: ''
+                                });
                             },
                             remove(index) {
                                 this.colindancias.splice(index, 1);
@@ -306,7 +328,7 @@
             </div>
         </div>
 
-        <div class="card card-info">
+        <!-- <div class="card card-info">
             <div class="card-header">
                 <h3 class="card-title">6. Fotografías (Opcional, máx. 5)</h3>
             </div>
@@ -318,6 +340,26 @@
                             multiple accept="image/*">
                         <label class="custom-file-label" for="fotografias">Elegir archivos...</label>
                     </div>
+                </div>
+            </div>
+        </div>  -->
+        <div class="card card-secondary">
+            <div class="card-header">
+                <h3 class="card-title">Geometría y Coordenadas Espaciales</h3>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label for="coordenadas">Coordenadas del Polígono (WKT o Hex EWKB)</label>
+                    <textarea name="coordenadas" id="coordenadas" rows="4"
+                        class="form-control font-monospace @error('coordenadas') is-invalid @enderror"
+                        placeholder="Pegue aquí el WKT (MULTIPOLYGON Z (...)) o el código Hex EWKB (01060000E0...)">{{ old('coordenadas', isset($predio) && $predio->coordenadas ? $predio->coordenadas_wkt ?? $predio->coordenadas : '') }}</textarea>
+                    @error('coordenadas')
+                        <span class="invalid-feedback">{{ $message }}</span>
+                    @enderror
+                    <small class="form-text text-muted">
+                        Puede copiar el WKT desde la tabla de atributos de QGIS o pegar la cadena hexadecimal generada
+                        por PostGIS.
+                    </small>
                 </div>
             </div>
         </div>

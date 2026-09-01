@@ -73,6 +73,7 @@
             // 1. CONFIGURACIÓN INICIAL
             // ---------------------------------------------------------
             const geoserverUrl = 'http://localhost:8080/geoserver/wms'; 
+            //const geoserverUrl = 'https://hist-produce-clips-whats.trycloudflare.com/geoserver/wms'; 
             const workspace = 'projectcatastro'; 
 
             // Inicializar mapa

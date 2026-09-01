@@ -49,7 +49,8 @@
                 responsive: true,
                 autoWidth: false,
                 ajax: {
-                    url: "{{ route('admin.tramites.index') }}",
+                    //url: "{{ route('admin.tramites.index') }}",
+                    url: "/admin/tramites", // Ruta relativa para evitar problemas con subdirectorios
                     data: function(d) {
                         // Leer el parámetro 'estado' de la barra de direcciones del navegador
                         const urlParams = new URLSearchParams(window.location.search);
